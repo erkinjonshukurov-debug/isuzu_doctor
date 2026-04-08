@@ -22,9 +22,11 @@ bot.deleteWebHook().catch(e => console.log('Webhook xatolik:', e.message));
 
 // -------------------- MA'LUMOTLAR YO'LLARI --------------------
 const DB_PATH = path.join(__dirname, 'users.json');
+const DIAGNOSTICS_PATH = path.join(__dirname, 'diagnostics.json');
 
 // -------------------- GLOBAL O'ZGARUVCHILAR --------------------
 let users = [];
+let diagnostics = [];
 const userSessions = new Map();
 
 // -------------------- DATABASE FUNKSIYALARI --------------------
@@ -55,6 +57,32 @@ function saveUsers() {
     }
 }
 
+function loadDiagnostics() {
+    try {
+        if (fs.existsSync(DIAGNOSTICS_PATH)) {
+            const data = fs.readFileSync(DIAGNOSTICS_PATH, 'utf8');
+            diagnostics = JSON.parse(data);
+            console.log('✅ Diagnostikalar yuklandi:', diagnostics.length);
+        } else {
+            diagnostics = [];
+            saveDiagnostics();
+        }
+    } catch (error) {
+        console.error('Diagnostika faylini yuklashda xatolik:', error);
+        diagnostics = [];
+        saveDiagnostics();
+    }
+}
+
+function saveDiagnostics() {
+    try {
+        fs.writeFileSync(DIAGNOSTICS_PATH, JSON.stringify(diagnostics, null, 2));
+        console.log('✅ Diagnostikalar saqlandi');
+    } catch (error) {
+        console.error('Diagnostika faylini saqlashda xatolik:', error);
+    }
+}
+
 // -------------------- YORDAMCHI FUNKSIYALAR --------------------
 function isAdminByPhone(phoneNumber) {
     return phoneNumber === ADMIN_PHONE;
@@ -70,6 +98,10 @@ function findUserByUserId(userId) {
     return users.find(u => u.userId === userId);
 }
 
+function findUserByCarNumber(carNumber) {
+    return users.find(u => u.carNumber === carNumber);
+}
+
 function getUserSession(userId) {
     if (!userSessions.has(userId)) {
         userSessions.set(userId, { step: null, data: {} });
@@ -81,12 +113,88 @@ function clearUserSession(userId) {
     userSessions.delete(userId);
 }
 
+// -------------------- BONUS TIZIMI --------------------
+function addDiagnostic(userId, description = '', cost = 0) {
+    const user = findUserByUserId(userId);
+    if (!user) return { success: false, message: 'Foydalanuvchi topilmadi' };
+    
+    let bonusAwarded = false;
+    let freeDiagnosticUsed = false;
+    
+    // Agar bepul diagnostika mavjud bo'lsa
+    if (user.freeDiagnostics > 0) {
+        user.freeDiagnostics--;
+        freeDiagnosticUsed = true;
+        user.totalDiagnostics++;
+        
+        // Diagnostikani saqlash
+        const diagnostic = {
+            id: Date.now(),
+            userId: user.userId,
+            carNumber: user.carNumber,
+            phone: user.phone,
+            date: new Date().toISOString(),
+            description: description || 'Bepul diagnostika',
+            cost: 0,
+            isFree: true
+        };
+        diagnostics.push(diagnostic);
+        saveDiagnostics();
+        saveUsers();
+        
+        return {
+            success: true,
+            message: '✅ Bepul diagnostika amalga oshirildi!',
+            freeUsed: true,
+            remainingFree: user.freeDiagnostics
+        };
+    }
+    
+    // Oddiy diagnostika
+    user.bonusCount++;
+    user.totalDiagnostics++;
+    
+    // Har 5 diagnostikada bonus
+    if (user.bonusCount >= 5) {
+        const bonusCount = Math.floor(user.bonusCount / 5);
+        user.freeDiagnostics += bonusCount;
+        user.bonusCount = user.bonusCount % 5;
+        bonusAwarded = true;
+    }
+    
+    // Diagnostikani saqlash
+    const diagnostic = {
+        id: Date.now(),
+        userId: user.userId,
+        carNumber: user.carNumber,
+        phone: user.phone,
+        date: new Date().toISOString(),
+        description: description || 'Oddiy diagnostika',
+        cost: cost,
+        isFree: false
+    };
+    diagnostics.push(diagnostic);
+    saveDiagnostics();
+    saveUsers();
+    
+    return {
+        success: true,
+        message: '✅ Diagnostika qo\'shildi!',
+        bonusAwarded: bonusAwarded,
+        currentBonus: user.bonusCount,
+        freeDiagnostics: user.freeDiagnostics,
+        remainingToNext: 5 - user.bonusCount
+    };
+}
+
 // -------------------- KEYBOARDS --------------------
 function getAdminKeyboard() {
     return {
         reply_markup: {
             keyboard: [
                 ['📊 Statistika', '👥 Foydalanuvchilar'],
+                ['🔧 Diagnostika qo\'shish', '🎁 Bonusga yaqinlar'],
+                ['⚠️ Xatoliklar', '📋 Diagnostikalar tarixi'],
                 ['❌ Asosiy menyu']
             ],
             resize_keyboard: true
@@ -99,7 +207,7 @@ function getUserKeyboard() {
         reply_markup: {
             keyboard: [
                 ['📊 Mening sahifam', '🎁 Mening bonuslarim'],
-                ['❌ Asosiy menyu']
+                ['📋 Mening diagnostikalarim', '❌ Asosiy menyu']
             ],
             resize_keyboard: true
         }
@@ -118,15 +226,27 @@ function getPhoneKeyboard() {
     };
 }
 
+function getDiagnosticKeyboard() {
+    return {
+        reply_markup: {
+            keyboard: [
+                ['🔧 Standart diagnostika', '🛞 Dvigatel diagnostikasi'],
+                ['⚡ Elektronika diagnostikasi', '❌ Bekor qilish']
+            ],
+            resize_keyboard: true
+        }
+    };
+}
+
 // -------------------- ASOSIY MENYU --------------------
 async function sendMainMenu(chatId, isAdminUser = false) {
     if (isAdminUser) {
-        await bot.sendMessage(chatId, '👑 **Admin paneliga xush kelibsiz!**', {
+        await bot.sendMessage(chatId, '👑 **Admin paneliga xush kelibsiz!**\n\n🔧 Quyidagi funksiyalardan foydalaning:', {
             parse_mode: 'Markdown',
             ...getAdminKeyboard()
         });
     } else {
-        await bot.sendMessage(chatId, '🏠 **Asosiy menyu**', {
+        await bot.sendMessage(chatId, '🏠 **Asosiy menyu**\n\n🚗 ISUZU DOCTOR botiga xush kelibsiz!', {
             parse_mode: 'Markdown',
             ...getUserKeyboard()
         });
@@ -142,11 +262,11 @@ bot.onText(/\/start/, async (msg) => {
     const existingUser = findUserByUserId(userId);
     
     if (existingUser) {
-        const welcomeText = `👋 **Xush kelibsiz!**\n\n🚗 Avtomobil: ${existingUser.carNumber}\n📞 Telefon: ${existingUser.phone}\n👑 Admin: ${existingUser.isAdmin ? 'Ha' : 'Yo\'q'}`;
+        const welcomeText = `👋 **Xush kelibsiz!**\n\n🚗 Avtomobil: ${existingUser.carNumber}\n📞 Telefon: ${existingUser.phone}\n👑 Admin: ${existingUser.isAdmin ? 'Ha' : 'Yo\'q'}\n🎁 Bonus: ${existingUser.bonusCount}/5\n🎉 Bepul diagnostika: ${existingUser.freeDiagnostics} ta`;
         await bot.sendMessage(chatId, welcomeText, { parse_mode: 'Markdown' });
         await sendMainMenu(chatId, existingUser.isAdmin);
     } else {
-        await bot.sendMessage(chatId, '🚗 **ISUZU USER** tizimiga xush kelibsiz!\n\n📱 Iltimos, telefon raqamingizni yuboring:', {
+        await bot.sendMessage(chatId, '🚗 **ISUZU DOCTOR** tizimiga xush kelibsiz!\n\n📱 Iltimos, telefon raqamingizni yuboring:', {
             parse_mode: 'Markdown',
             ...getPhoneKeyboard()
         });
@@ -226,7 +346,6 @@ bot.on('message', async (msg) => {
             return;
         }
         
-        // RASMSIZ ro'yxatdan o'tkazish (rasm saqlash o'tkazib yuboriladi)
         const newUser = {
             userId: userId,
             phone: session.data.phone,
@@ -251,6 +370,76 @@ bot.on('message', async (msg) => {
         return;
     }
     
+    // Admin diagnostika qo'shish
+    if (session.step === 'admin_add_diagnostic') {
+        const carNumber = text.toUpperCase().trim();
+        const user = findUserByCarNumber(carNumber);
+        
+        if (!user) {
+            await bot.sendMessage(chatId, '❌ **Bunday avtomobil topilmadi!**\n\nIltimos, to\'g\'ri avtomobil raqamini kiriting:', {
+                parse_mode: 'Markdown'
+            });
+            return;
+        }
+        
+        session.data.targetUser = user;
+        session.step = 'admin_diagnostic_type';
+        
+        await bot.sendMessage(chatId, `✅ Foydalanuvchi topildi:\n\n🚗 ${user.carNumber}\n📞 ${user.phone}\n🎁 Bonus: ${user.bonusCount}/5\n🎉 Bepul: ${user.freeDiagnostics}\n\n🔧 Diagnostika turini tanlang:`, {
+            parse_mode: 'Markdown',
+            ...getDiagnosticKeyboard()
+        });
+        return;
+    }
+    
+    if (session.step === 'admin_diagnostic_type') {
+        let description = '';
+        let cost = 0;
+        
+        if (text === '🔧 Standart diagnostika') {
+            description = 'Standart diagnostika';
+            cost = 50000;
+        } else if (text === '🛞 Dvigatel diagnostikasi') {
+            description = 'Dvigatel diagnostikasi';
+            cost = 100000;
+        } else if (text === '⚡ Elektronika diagnostikasi') {
+            description = 'Elektronika diagnostikasi';
+            cost = 150000;
+        } else if (text === '❌ Bekor qilish') {
+            clearUserSession(userId);
+            await sendMainMenu(chatId, true);
+            return;
+        } else {
+            await bot.sendMessage(chatId, '❌ **Noto\'g\'ri tanlov!** Iltimos, menyudan tanlang:', {
+                parse_mode: 'Markdown',
+                ...getDiagnosticKeyboard()
+            });
+            return;
+        }
+        
+        const result = addDiagnostic(session.data.targetUser.userId, description, cost);
+        
+        let response = result.message;
+        if (result.bonusAwarded) {
+            response += `\n🎉 **TABRIKLAYMIZ!** 5-diagnostikadan so\'ng 1 ta BEPUL diagnostika qozondingiz!`;
+        }
+        response += `\n\n📊 Joriy holat:\n🎁 Bonus: ${result.currentBonus || session.data.targetUser.bonusCount}/5\n🎉 Bepul diagnostika: ${result.freeDiagnostics || session.data.targetUser.freeDiagnostics}`;
+        
+        await bot.sendMessage(chatId, response, { parse_mode: 'Markdown' });
+        
+        // Foydalanuvchiga xabar yuborish
+        try {
+            const userMsg = `🔧 **Diagnostika amalga oshirildi!**\n\n🚗 Avtomobil: ${session.data.targetUser.carNumber}\n📋 Turi: ${description}\n💰 Narxi: ${cost.toLocaleString()} so'm\n📅 Sana: ${new Date().toLocaleString()}\n\n🎁 Bonus: ${session.data.targetUser.bonusCount}/5`;
+            await bot.sendMessage(session.data.targetUser.userId, userMsg, { parse_mode: 'Markdown' });
+        } catch (e) {
+            console.log('Foydalanuvchiga xabar yuborib bo\'lmadi');
+        }
+        
+        clearUserSession(userId);
+        await sendMainMenu(chatId, true);
+        return;
+    }
+    
     // Asosiy menyu buyruqlari
     if (text === '❌ Asosiy menyu') {
         clearUserSession(userId);
@@ -258,40 +447,68 @@ bot.on('message', async (msg) => {
         return;
     }
     
-    if (text === '📊 Mening sahifam') {
-        const user = findUserByUserId(userId);
-        if (!user) {
-            await bot.sendMessage(chatId, '❌ Ro\'yxatdan o\'tmagan! /start bosing.');
+    // FOYDALANUVCHI MENYUSI
+    if (!isAdmin(userId)) {
+        if (text === '📊 Mening sahifam') {
+            const user = findUserByUserId(userId);
+            if (!user) {
+                await bot.sendMessage(chatId, '❌ Ro\'yxatdan o\'tmagan! /start bosing.');
+                return;
+            }
+            
+            const profile = `📊 **MENGING SAHIFAM**\n\n🚗 Avtomobil: ${user.carNumber}\n📞 Telefon: ${user.phone}\n📅 Ro'yxat: ${new Date(user.registeredDate).toLocaleDateString()}\n🎁 Bonus: ${user.bonusCount}/5\n🎉 Bepul: ${user.freeDiagnostics} ta\n📊 Jami: ${user.totalDiagnostics} ta diagnostika`;
+            
+            await bot.sendMessage(chatId, profile, { parse_mode: 'Markdown' });
             return;
         }
         
-        const profile = `📊 **MENGING SAHIFAM**\n\n🚗 Avtomobil: ${user.carNumber}\n📞 Telefon: ${user.phone}\n📅 Ro'yxat: ${new Date(user.registeredDate).toLocaleDateString()}\n🎁 Bonus: ${user.bonusCount}/5\n🎉 Bepul: ${user.freeDiagnostics} ta\n📊 Jami: ${user.totalDiagnostics} ta`;
-        
-        await bot.sendMessage(chatId, profile, { parse_mode: 'Markdown' });
-        return;
-    }
-    
-    if (text === '🎁 Mening bonuslarim') {
-        const user = findUserByUserId(userId);
-        if (!user) {
-            await bot.sendMessage(chatId, '❌ Ro\'yxatdan o\'tmagan! /start bosing.');
+        if (text === '🎁 Mening bonuslarim') {
+            const user = findUserByUserId(userId);
+            if (!user) {
+                await bot.sendMessage(chatId, '❌ Ro\'yxatdan o\'tmagan! /start bosing.');
+                return;
+            }
+            
+            const nextFree = 5 - user.bonusCount;
+            const bonusText = `🎁 **MENGING BONUSLARIM**\n\n📊 Joriy: ${user.bonusCount}/5\n🎉 Bepul: ${user.freeDiagnostics} ta\n${nextFree > 0 ? `📌 Keyingi BEPUL: ${nextFree} ta diagnostikadan so'ng` : '🎉 BEPUL diagnostika qozondingiz!'}\n\n🎯 Har 5 diagnostikada 1 ta BEPUL!`;
+            
+            await bot.sendMessage(chatId, bonusText, { parse_mode: 'Markdown' });
             return;
         }
         
-        const nextFree = 5 - user.bonusCount;
-        const bonusText = `🎁 **MENGING BONUSLARIM**\n\n📊 Joriy: ${user.bonusCount}/5\n🎉 Bepul: ${user.freeDiagnostics} ta\n${nextFree > 0 ? `📌 Keyingi BEPUL: ${nextFree} ta` : '🎉 BEPUL diagnostika qozondingiz!'}\n\n🎯 Har 5 diagnostikada 1 ta BEPUL!`;
-        
-        await bot.sendMessage(chatId, bonusText, { parse_mode: 'Markdown' });
-        return;
+        if (text === '📋 Mening diagnostikalarim') {
+            const user = findUserByUserId(userId);
+            if (!user) {
+                await bot.sendMessage(chatId, '❌ Ro\'yxatdan o\'tmagan! /start bosing.');
+                return;
+            }
+            
+            const userDiagnostics = diagnostics.filter(d => d.userId === userId).slice(-10).reverse();
+            
+            if (userDiagnostics.length === 0) {
+                await bot.sendMessage(chatId, '📭 **Sizda hali diagnostikalar mavjud emas!**', { parse_mode: 'Markdown' });
+                return;
+            }
+            
+            let diagText = '📋 **MENGING DIAGNOSTIKALARIM**\n\n';
+            for (const diag of userDiagnostics) {
+                diagText += `📅 ${new Date(diag.date).toLocaleDateString()}\n🔧 ${diag.description}\n💰 ${diag.cost.toLocaleString()} so'm\n${diag.isFree ? '🎉 BEPUL' : '💵 To\'lovli'}\n\n`;
+            }
+            
+            await bot.sendMessage(chatId, diagText, { parse_mode: 'Markdown' });
+            return;
+        }
     }
     
-    // Admin funksiyalari
+    // ADMIN MENYUSI
     if (isAdmin(userId)) {
         if (text === '📊 Statistika') {
             const totalUsers = users.filter(u => !u.isAdmin).length;
-            const totalDiagnostics = users.reduce((sum, u) => sum + (u.totalDiagnostics || 0), 0);
+            const totalDiagnostics = diagnostics.length;
+            const totalIncome = diagnostics.reduce((sum, d) => sum + d.cost, 0);
+            const freeDiagnosticsGiven = diagnostics.filter(d => d.isFree).length;
             
-            const stats = `📊 **STATISTIKA**\n\n👥 Foydalanuvchilar: ${totalUsers}\n🔧 Jami diagnostikalar: ${totalDiagnostics}\n📅 Sana: ${new Date().toLocaleString('uz-UZ')}`;
+            const stats = `📊 **STATISTIKA**\n\n👥 Foydalanuvchilar: ${totalUsers}\n🔧 Jami diagnostikalar: ${totalDiagnostics}\n💰 Umumiy daromad: ${totalIncome.toLocaleString()} so'm\n🎉 Bepul diagnostikalar: ${freeDiagnosticsGiven}\n📅 Sana: ${new Date().toLocaleString('uz-UZ')}`;
             
             await bot.sendMessage(chatId, stats, { parse_mode: 'Markdown' });
             return;
@@ -307,10 +524,71 @@ bot.on('message', async (msg) => {
             
             let userList = '👥 **FOYDALANUVCHILAR**\n\n';
             for (const user of regularUsers.slice(-15).reverse()) {
-                userList += `🚗 ${user.carNumber}\n📞 ${user.phone}\n📅 ${new Date(user.registeredDate).toLocaleDateString()}\n🎁 ${user.bonusCount}/5\n\n`;
+                userList += `🚗 ${user.carNumber}\n📞 ${user.phone}\n📅 ${new Date(user.registeredDate).toLocaleDateString()}\n🎁 ${user.bonusCount}/5\n🎉 ${user.freeDiagnostics} ta bepul\n📊 ${user.totalDiagnostics} ta diagnostika\n\n`;
             }
             
             await bot.sendMessage(chatId, userList, { parse_mode: 'Markdown' });
+            return;
+        }
+        
+        if (text === '🔧 Diagnostika qo\'shish') {
+            session.step = 'admin_add_diagnostic';
+            await bot.sendMessage(chatId, '🔧 **Diagnostika qo\'shish**\n\n🚗 Avtomobil raqamini kiriting:', {
+                parse_mode: 'Markdown',
+                reply_markup: { remove_keyboard: true }
+            });
+            return;
+        }
+        
+        if (text === '🎁 Bonusga yaqinlar') {
+            const usersNearBonus = users.filter(u => !u.isAdmin && u.bonusCount >= 3 && u.bonusCount < 5);
+            
+            if (usersNearBonus.length === 0) {
+                await bot.sendMessage(chatId, '📭 **Bonusga yaqin foydalanuvchilar topilmadi!**', { parse_mode: 'Markdown' });
+                return;
+            }
+            
+            let nearText = '🎁 **BONUSGA YAQIN FOYDALANUVCHILAR**\n\n';
+            for (const user of usersNearBonus) {
+                const remaining = 5 - user.bonusCount;
+                nearText += `🚗 ${user.carNumber}\n📞 ${user.phone}\n🎁 Bonus: ${user.bonusCount}/5\n📌 Qolgan: ${remaining} ta\n\n`;
+            }
+            
+            await bot.sendMessage(chatId, nearText, { parse_mode: 'Markdown' });
+            return;
+        }
+        
+        if (text === '⚠️ Xatoliklar') {
+            const errorDiagnostics = diagnostics.filter(d => d.description.includes('xato') || d.description.includes('nosozlik'));
+            
+            if (errorDiagnostics.length === 0) {
+                await bot.sendMessage(chatId, '✅ **Xatoliklar qayd etilmagan!**', { parse_mode: 'Markdown' });
+                return;
+            }
+            
+            let errorText = '⚠️ **XATOLIKLAR RO\'YXATI**\n\n';
+            for (const diag of errorDiagnostics.slice(-10).reverse()) {
+                errorText += `📅 ${new Date(diag.date).toLocaleDateString()}\n🚗 ${diag.carNumber}\n🔧 ${diag.description}\n\n`;
+            }
+            
+            await bot.sendMessage(chatId, errorText, { parse_mode: 'Markdown' });
+            return;
+        }
+        
+        if (text === '📋 Diagnostikalar tarixi') {
+            const recentDiagnostics = diagnostics.slice(-20).reverse();
+            
+            if (recentDiagnostics.length === 0) {
+                await bot.sendMessage(chatId, '📭 **Hech qanday diagnostika topilmadi!**', { parse_mode: 'Markdown' });
+                return;
+            }
+            
+            let diagText = '📋 **DIAGNOSTIKALAR TARIXI**\n\n';
+            for (const diag of recentDiagnostics) {
+                diagText += `📅 ${new Date(diag.date).toLocaleDateString()}\n🚗 ${diag.carNumber}\n🔧 ${diag.description}\n💰 ${diag.cost.toLocaleString()} so'm\n${diag.isFree ? '🎉 BEPUL' : '💵 To\'lovli'}\n\n`;
+            }
+            
+            await bot.sendMessage(chatId, diagText, { parse_mode: 'Markdown' });
             return;
         }
     }
@@ -339,12 +617,14 @@ console.log('🚗 ISUZU DOCTOR BOT ISHGA TUSHMOQDA');
 console.log('='.repeat(60));
 
 loadUsers();
+loadDiagnostics();
 
 console.log('='.repeat(60));
 console.log('🚗 ISUZU DOCTOR BOT ISHGA TUSHDI');
 console.log('='.repeat(60));
 console.log(`👑 Admin telefon: ${ADMIN_PHONE}`);
 console.log(`👥 Foydalanuvchilar: ${users.filter(u => !u.isAdmin).length}`);
+console.log(`🔧 Diagnostikalar: ${diagnostics.length}`);
 console.log('='.repeat(60));
 
 console.log('✅ Bot ishlashga tayyor!');
