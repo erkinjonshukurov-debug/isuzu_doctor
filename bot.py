@@ -931,7 +931,92 @@ if __name__ == '__main__':
     
     init_db()
     
-    app = ApplicationBuilder().token("8779251766:AAH12INusgBCawsk5awqIjcyHnNLiq5A33A").build()
+    # ================ BOTNI ISHGA TUSHIRISH ================
+
+import os
+
+if __name__ == '__main__':
+    print("=" * 60)
+    print("🚗 ISUZU USER BOT ISHGA TUSHMOQDA")
+    print("=" * 60)
+    
+    create_backup_dir()
+    if os.path.exists(DB_FILE):
+        print("📁 Mavjud database topildi")
+        create_backup()
+    else:
+        print("📁 Yangi database yaratiladi")
+        if restore_from_backup():
+            print("✅ Backup dan tiklandi")
+    
+    init_db()
+    
+    # Tokenni environment variable dan o'qish (XAVFSIZ)
+    TOKEN = os.environ.get('BOT_TOKEN')
+    if not TOKEN:
+        print("❌ XATOLIK: BOT_TOKEN environment variable topilmadi!")
+        print("👉 Railway'da Variables -> BOT_TOKEN = 8779251766:AAH12INusgBCawsk5awqIjcyHnNLiq5A33A")
+        exit(1)
+    
+    app = ApplicationBuilder().token(TOKEN).build()
+    
+    # Conversation handlerlar
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('start', start)],
+        states={
+            PHONE_NUMBER: [MessageHandler(filters.TEXT | filters.CONTACT, get_phone_number)],
+            CAR_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_car_number)],
+            PHOTO: [MessageHandler(filters.PHOTO, get_photo)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],
+    )
+    
+    admin_diag_handler = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex('^➕ Diagnostika qo\'shish$'), admin_add_diagnostic_start)],
+        states={
+            ADMIN_SELECT_USER: [CallbackQueryHandler(diag_select_user_callback, pattern='^diag_user_|diag_cancel$')],
+            ADMIN_SELECT_CAR: [CallbackQueryHandler(diag_select_car_callback, pattern='^diag_car_|diag_cancel$')],
+            ADMIN_DIAG_TYPE: [CallbackQueryHandler(diag_type_callback, pattern='^diag_type_|diag_cancel$')],
+            ADMIN_DIAG_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_get_description)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],
+    )
+    
+    admin_error_handler = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex('^⚠️ Xatolik qo\'shish$'), admin_add_error)],
+        states={
+            ADMIN_ERROR_TYPE: [CallbackQueryHandler(admin_select_error_user_callback, pattern='^error_user_|error_cancel$')],
+            WAITING_FOR_ERROR: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_get_error)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],
+    )
+    
+    admin_search_handler = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex('^🔍 Avtomobil qidirish$'), admin_search_car)],
+        states={
+            ADMIN_SEARCH_CAR: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_search_car_number)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],
+    )
+    
+    # Handlerlarni qo'shish
+    app.add_handler(conv_handler)
+    app.add_handler(admin_diag_handler)
+    app.add_handler(admin_error_handler)
+    app.add_handler(admin_search_handler)
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CallbackQueryHandler(search_diag_callback, pattern='^search_diag_|search_cancel$'))
+    
+    print("=" * 60)
+    print("🚗 ISUZU USER BOT ISHGA TUSHDI")
+    print("=" * 60)
+    print(f"💰 Diagnostika narxi: {DIAG_COST:,} so'm")
+    print(f"👑 Admin telefon: {ADMIN_PHONE}")
+    print(f"🆔 Admin ID: {ADMIN_USER_ID}")
+    print("=" * 60)
+    
+    app.run_polling()
     
     # Conversation handlerlar
     conv_handler = ConversationHandler(
