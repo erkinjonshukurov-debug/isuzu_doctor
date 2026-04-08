@@ -152,7 +152,8 @@ function addDiagnostic(userId, workDescription = '', additionalNotes = '') {
             freeUsed: true,
             remainingFree: user.freeDiagnostics,
             workDescription: workDescription,
-            additionalNotes: additionalNotes
+            additionalNotes: additionalNotes,
+            price: 0
         };
     }
     
@@ -217,7 +218,7 @@ function getUserKeyboard() {
         reply_markup: {
             keyboard: [
                 ['📊 Mening sahifam', '🎁 Mening bonuslarim'],
-                ['📋 Diagnostika tarixim', '💰 Narxlar'],
+                ['📋 Diagnostika tarixim', 'ℹ️ Ma\'lumot'],
                 ['❌ Asosiy menyu']
             ],
             resize_keyboard: true
@@ -237,19 +238,6 @@ function getPhoneKeyboard() {
     };
 }
 
-function getWorkTypeKeyboard() {
-    return {
-        reply_markup: {
-            keyboard: [
-                ['🔧 Dvigatel diagnostikasi', '🛞 Shassi diagnostikasi'],
-                ['⚡ Elektronika diagnostikasi', '🌡️ Klimat diagnostikasi'],
-                ['🔍 To\'liq kompyuter diagnostikasi', '❌ Bekor qilish']
-            ],
-            resize_keyboard: true
-        }
-    };
-}
-
 // -------------------- ASOSIY MENYU --------------------
 async function sendMainMenu(chatId, isAdminUser = false) {
     if (isAdminUser) {
@@ -258,7 +246,7 @@ async function sendMainMenu(chatId, isAdminUser = false) {
             ...getAdminKeyboard()
         });
     } else {
-        await bot.sendMessage(chatId, '🏠 **Asosiy menyu**\n\n🚗 ISUZU DOCTOR botiga xush kelibsiz!\n💰 Diagnostika narxi: 250,000 so\'m', {
+        await bot.sendMessage(chatId, '🏠 **Asosiy menyu**\n\n🚗 ISUZU DOCTOR botiga xush kelibsiz!\n\n📋 Diagnostika natijalarini ko\'rish uchun "📋 Diagnostika tarixim" bo\'limiga o\'ting.', {
             parse_mode: 'Markdown',
             ...getUserKeyboard()
         });
@@ -274,11 +262,11 @@ bot.onText(/\/start/, async (msg) => {
     const existingUser = findUserByUserId(userId);
     
     if (existingUser) {
-        const welcomeText = `👋 **Xush kelibsiz!**\n\n🚗 Avtomobil: ${existingUser.carNumber}\n📞 Telefon: ${existingUser.phone}\n👑 Admin: ${existingUser.isAdmin ? 'Ha' : 'Yo\'q'}\n🎁 Bonus: ${existingUser.bonusCount}/5\n🎉 Bepul diagnostika: ${existingUser.freeDiagnostics} ta\n💰 Diagnostika narxi: ${DIAGNOSTIC_PRICE.toLocaleString()} so'm`;
+        const welcomeText = `👋 **Xush kelibsiz!**\n\n🚗 Avtomobil: ${existingUser.carNumber}\n📞 Telefon: ${existingUser.phone}\n👑 Admin: ${existingUser.isAdmin ? 'Ha' : 'Yo\'q'}\n🎁 Bonus: ${existingUser.bonusCount}/5\n🎉 Bepul diagnostika: ${existingUser.freeDiagnostics} ta`;
         await bot.sendMessage(chatId, welcomeText, { parse_mode: 'Markdown' });
         await sendMainMenu(chatId, existingUser.isAdmin);
     } else {
-        await bot.sendMessage(chatId, '🚗 **ISUZU DOCTOR** tizimiga xush kelibsiz!\n\n💰 Diagnostika narxi: 250,000 so\'m\n\n📱 Iltimos, telefon raqamingizni yuboring:', {
+        await bot.sendMessage(chatId, '🚗 **ISUZU DOCTOR** tizimiga xush kelibsiz!\n\n📱 Iltimos, telefon raqamingizni yuboring:', {
             parse_mode: 'Markdown',
             ...getPhoneKeyboard()
         });
@@ -373,7 +361,7 @@ bot.on('message', async (msg) => {
         users.push(newUser);
         saveUsers();
         
-        await bot.sendMessage(chatId, `✅ **Siz muvaffaqiyatli ro'yxatdan o'tdingiz!**\n\n🚗 Avtomobil: ${carNumber}\n📞 Telefon: ${session.data.phone}\n💰 Diagnostika narxi: ${DIAGNOSTIC_PRICE.toLocaleString()} so'm\n\n🎁 **Bonus tizimi:** Har 5 diagnostikada 1 ta BEPUL!`, {
+        await bot.sendMessage(chatId, `✅ **Siz muvaffaqiyatli ro'yxatdan o'tdingiz!**\n\n🚗 Avtomobil: ${carNumber}\n📞 Telefon: ${session.data.phone}\n\n🎁 **Bonus tizimi:** Har 5 diagnostikada 1 ta BEPUL!\n\n📋 Diagnostika natijalari admin tomonidan kiritilgandan so'ng sizga xabar keladi.`, {
             parse_mode: 'Markdown'
         });
         
@@ -397,7 +385,7 @@ bot.on('message', async (msg) => {
         session.data.targetUser = user;
         session.step = 'admin_work_description';
         
-        await bot.sendMessage(chatId, `✅ Foydalanuvchi topildi:\n\n🚗 ${user.carNumber}\n📞 ${user.phone}\n🎁 Bonus: ${user.bonusCount}/5\n🎉 Bepul: ${user.freeDiagnostics}\n💰 Narx: ${DIAGNOSTIC_PRICE.toLocaleString()} so'm\n\n🔧 **Bajarilgan ishlarni kiriting:**\n\nMasalan: "Dvigatel tekshirildi, moy almashtirildi, filtr tozalandi"`, {
+        await bot.sendMessage(chatId, `✅ Foydalanuvchi topildi:\n\n🚗 ${user.carNumber}\n📞 ${user.phone}\n🎁 Bonus: ${user.bonusCount}/5\n🎉 Bepul: ${user.freeDiagnostics}\n\n🔧 **Bajarilgan ishlarni kiriting:**\n\nMasalan: "Dvigatel tekshirildi, moy almashtirildi, filtr tozalandi"`, {
             parse_mode: 'Markdown',
             reply_markup: { remove_keyboard: true }
         });
@@ -409,7 +397,7 @@ bot.on('message', async (msg) => {
         session.data.workDescription = text;
         session.step = 'admin_additional_notes';
         
-        await bot.sendMessage(chatId, `✅ Bajarilgan ishlar qabul qilindi:\n\n📝 "${text}"\n\n➕ **Qo'shimcha eslatmalar kiriting** (ixtiyoriy):\n\nMasalan: "Mijozga keyingi diagnostika 3000 km dan keyin tavsiya qilindi"`, {
+        await bot.sendMessage(chatId, `✅ Bajarilgan ishlar qabul qilindi:\n\n📝 "${text}"\n\n➕ **Qo'shimcha eslatmalar kiriting** (ixtiyoriy):\n\nMasalan: "Mijozga keyingi diagnostika 3000 km dan keyin tavsiya qilindi" yoki "❌ Bekor qilish"`, {
             parse_mode: 'Markdown'
         });
         return;
@@ -425,45 +413,72 @@ bot.on('message', async (msg) => {
             session.data.additionalNotes
         );
         
-        let response = `🔧 **DIAGNOSTIKA NATIJASI**\n\n`;
-        response += `🚗 Avtomobil: ${session.data.targetUser.carNumber}\n`;
-        response += `📞 Telefon: ${session.data.targetUser.phone}\n`;
-        response += `📅 Sana: ${new Date().toLocaleString()}\n`;
-        response += `💰 Narx: ${result.price ? result.price.toLocaleString() : 0} so'm\n\n`;
-        response += `📝 **Bajarilgan ishlar:**\n${session.data.workDescription}\n\n`;
+        // Admin uchun hisobot
+        let adminResponse = `🔧 **DIAGNOSTIKA QO'SHILDI**\n\n`;
+        adminResponse += `🚗 Avtomobil: ${session.data.targetUser.carNumber}\n`;
+        adminResponse += `📞 Telefon: ${session.data.targetUser.phone}\n`;
+        adminResponse += `📅 Sana: ${new Date().toLocaleString()}\n`;
+        
+        if (!result.freeUsed) {
+            adminResponse += `💰 Narx: ${result.price.toLocaleString()} so'm\n`;
+        } else {
+            adminResponse += `🎉 Bepul diagnostika\n`;
+        }
+        
+        adminResponse += `\n📝 **Bajarilgan ishlar:**\n${session.data.workDescription}\n`;
         
         if (session.data.additionalNotes && session.data.additionalNotes !== '❌ Bekor qilish') {
-            response += `➕ **Qo'shimcha:**\n${session.data.additionalNotes}\n\n`;
+            adminResponse += `\n➕ **Qo'shimcha:**\n${session.data.additionalNotes}\n`;
         }
         
-        response += `${result.message}\n`;
+        adminResponse += `\n${result.message}\n`;
         
         if (result.bonusAwarded) {
-            response += `🎉 **TABRIKLAYMIZ!** 5-diagnostikadan so\'ng 1 ta BEPUL diagnostika qozondingiz!\n`;
+            adminResponse += `🎉 **TABRIKLAYMIZ!** 5-diagnostikadan so\'ng 1 ta BEPUL diagnostika qozondingiz!\n`;
         }
         
-        response += `\n📊 **Joriy holat:**\n`;
-        response += `🎁 Bonus: ${result.currentBonus || session.data.targetUser.bonusCount}/5\n`;
-        response += `🎉 Bepul diagnostika: ${result.freeDiagnostics || session.data.targetUser.freeDiagnostics} ta\n`;
-        response += `📊 Jami diagnostikalar: ${session.data.targetUser.totalDiagnostics + 1}`;
+        adminResponse += `\n📊 **Joriy holat:**\n`;
+        adminResponse += `🎁 Bonus: ${result.currentBonus || session.data.targetUser.bonusCount}/5\n`;
+        adminResponse += `🎉 Bepul diagnostika: ${result.freeDiagnostics || session.data.targetUser.freeDiagnostics} ta\n`;
+        adminResponse += `📊 Jami diagnostikalar: ${session.data.targetUser.totalDiagnostics}`;
         
-        await bot.sendMessage(chatId, response, { parse_mode: 'Markdown' });
+        await bot.sendMessage(chatId, adminResponse, { parse_mode: 'Markdown' });
         
-        // Foydalanuvchiga xabar yuborish
+        // Foydalanuvchiga batafsil xabar yuborish (narx bilan birga)
         try {
-            const userMsg = `🔧 **Diagnostika amalga oshirildi!**\n\n` +
-                `🚗 Avtomobil: ${session.data.targetUser.carNumber}\n` +
-                `📅 Sana: ${new Date().toLocaleString()}\n` +
-                `💰 Narx: ${result.price ? result.price.toLocaleString() : 0} so'm\n\n` +
-                `📝 **Bajarilgan ishlar:**\n${session.data.workDescription}\n\n`;
+            let userMsg = `🔧 **DIAGNOSTIKA NATIJALARI**\n\n`;
+            userMsg += `🚗 Avtomobil: ${session.data.targetUser.carNumber}\n`;
+            userMsg += `📅 Sana: ${new Date().toLocaleString()}\n\n`;
+            userMsg += `📝 **Bajarilgan ishlar:**\n${session.data.workDescription}\n\n`;
             
             if (session.data.additionalNotes && session.data.additionalNotes !== '❌ Bekor qilish') {
                 userMsg += `➕ **Qo'shimcha ma'lumot:**\n${session.data.additionalNotes}\n\n`;
             }
             
-            userMsg += `🎁 Bonus: ${session.data.targetUser.bonusCount}/5\n` +
-                `🎉 Bepul diagnostikalar: ${session.data.targetUser.freeDiagnostics} ta\n\n` +
-                `📊 Diagnostika tarixingizni "${'📋 Diagnostika tarixim'}" bo'limidan ko'rishingiz mumkin.`;
+            // Narx haqida ma'lumot - faqat diagnostikadan keyin
+            if (!result.freeUsed) {
+                userMsg += `💰 **DIAGNOSTIKA NARXI:** ${result.price.toLocaleString()} so'm\n\n`;
+                userMsg += `📋 **Narxga quyidagilar kiradi:**\n`;
+                userMsg += `• Dvigatel tizimi tekshiruvi\n`;
+                userMsg += `• Shassi va podveska diagnostikasi\n`;
+                userMsg += `• Elektronika va sensorlar tekshiruvi\n`;
+                userMsg += `• Klimat tizimi diagnostikasi\n`;
+                userMsg += `• Xatoliklarni o'qish va tahlil qilish\n`;
+                userMsg += `• Mutaxassis tavsiyalari\n\n`;
+            } else {
+                userMsg += `🎉 **BEPUL DIAGNOSTIKA**\n\n`;
+            }
+            
+            userMsg += `🎁 **Bonus tizimi:**\n`;
+            userMsg += `📊 Joriy bonus: ${session.data.targetUser.bonusCount}/5\n`;
+            userMsg += `🎉 Bepul diagnostikalar: ${session.data.targetUser.freeDiagnostics} ta\n`;
+            
+            const nextFree = 5 - session.data.targetUser.bonusCount;
+            if (nextFree > 0 && !result.freeUsed) {
+                userMsg += `📌 Keyingi bepul diagnostika uchun: ${nextFree} ta diagnostika qolgan\n`;
+            }
+            
+            userMsg += `\n📊 Diagnostika tarixingizni "${'📋 Diagnostika tarixim'}" bo'limidan ko'rishingiz mumkin.`;
             
             await bot.sendMessage(session.data.targetUser.userId, userMsg, { parse_mode: 'Markdown' });
         } catch (e) {
@@ -497,8 +512,8 @@ bot.on('message', async (msg) => {
                 `📅 Ro'yxat: ${new Date(user.registeredDate).toLocaleDateString()}\n` +
                 `🎁 Bonus: ${user.bonusCount}/5\n` +
                 `🎉 Bepul: ${user.freeDiagnostics} ta\n` +
-                `📊 Jami: ${user.totalDiagnostics} ta diagnostika\n` +
-                `💰 Diagnostika narxi: ${DIAGNOSTIC_PRICE.toLocaleString()} so'm`;
+                `📊 Jami: ${user.totalDiagnostics} ta diagnostika\n\n` +
+                `📋 Diagnostika narxi va bajarilgan ishlar haqida ma'lumot diagnostikadan keyin yuboriladi.`;
             
             await bot.sendMessage(chatId, profile, { parse_mode: 'Markdown' });
             return;
@@ -516,8 +531,8 @@ bot.on('message', async (msg) => {
                 `📊 Joriy: ${user.bonusCount}/5\n` +
                 `🎉 Bepul: ${user.freeDiagnostics} ta\n` +
                 `${nextFree > 0 ? `📌 Keyingi BEPUL: ${nextFree} ta diagnostikadan so'ng` : '🎉 BEPUL diagnostika qozondingiz!'}\n\n` +
-                `🎯 Har 5 diagnostikada 1 ta BEPUL!\n` +
-                `💰 Har bir diagnostika narxi: ${DIAGNOSTIC_PRICE.toLocaleString()} so'm`;
+                `🎯 **Bonus tizimi:** Har 5 diagnostikada 1 ta BEPUL diagnostika!\n` +
+                `💡 Diagnostika narxi va bajarilgan ishlar faqat diagnostikadan keyin ma'lum qilinadi.`;
             
             await bot.sendMessage(chatId, bonusText, { parse_mode: 'Markdown' });
             return;
@@ -533,7 +548,7 @@ bot.on('message', async (msg) => {
             const userDiagnostics = diagnostics.filter(d => d.userId === userId).slice(-10).reverse();
             
             if (userDiagnostics.length === 0) {
-                await bot.sendMessage(chatId, '📭 **Sizda hali diagnostikalar mavjud emas!**', { parse_mode: 'Markdown' });
+                await bot.sendMessage(chatId, '📭 **Sizda hali diagnostikalar mavjud emas!**\n\n🔧 Diagnostika qilingandan so\'ng natijalar shu yerda ko\'rinadi.', { parse_mode: 'Markdown' });
                 return;
             }
             
@@ -546,8 +561,12 @@ bot.on('message', async (msg) => {
                     diagText += `➕ **Qo'shimcha:**\n${diag.additionalNotes}\n\n`;
                 }
                 
-                diagText += `💰 Narx: ${diag.price.toLocaleString()} so'm\n`;
-                diagText += `${diag.isFree ? '🎉 BEPUL diagnostika' : '💵 To\'lovli diagnostika'}\n`;
+                if (diag.price > 0) {
+                    diagText += `💰 **Narx:** ${diag.price.toLocaleString()} so'm\n`;
+                } else {
+                    diagText += `🎉 **BEPUL diagnostika**\n`;
+                }
+                
                 diagText += `━━━━━━━━━━━━━━━━━━\n`;
                 
                 await bot.sendMessage(chatId, diagText, { parse_mode: 'Markdown' });
@@ -555,19 +574,19 @@ bot.on('message', async (msg) => {
             return;
         }
         
-        if (text === '💰 Narxlar') {
-            const priceText = `💰 **DIAGNOSTIKA NARXLARI**\n\n` +
-                `🔧 Standart diagnostika: ${DIAGNOSTIC_PRICE.toLocaleString()} so'm\n\n` +
-                `📋 **Diagnostika tarkibiga kiradi:**\n` +
-                `• Dvigatel tizimi tekshiruvi\n` +
-                `• Shassi va podveska diagnostikasi\n` +
-                `• Elektronika va sensorlar tekshiruvi\n` +
-                `• Klimat tizimi diagnostikasi\n` +
-                `• Xatoliklarni o'qish va tahlil qilish\n` +
-                `• Tavsiyalar berish\n\n` +
-                `🎁 **Bonus:** Har 5 diagnostikada 1 ta BEPUL!`;
+        if (text === 'ℹ️ Ma\'lumot') {
+            const infoText = `ℹ️ **ISUZU DOCTOR BOT HAQIDA**\n\n` +
+                `🚗 Ushbu bot avtomobillarni diagnostika qilish va hisobini yuritish uchun mo'ljallangan.\n\n` +
+                `📋 **Qanday ishlaydi:**\n` +
+                `• Diagnostika faqat admin tomonidan amalga oshiriladi\n` +
+                `• Diagnostika natijalari va narx faqat diagnostikadan keyin ma'lum qilinadi\n` +
+                `• Har bir diagnostika batafsil hisoboti sizga yuboriladi\n\n` +
+                `🎁 **Bonus tizimi:**\n` +
+                `• Har 5 diagnostikada 1 ta BEPUL diagnostika\n` +
+                `• Bepul diagnostikalar soni profilingizda ko'rsatiladi\n\n` +
+                `📞 **Aloqa:** +998979247888`;
             
-            await bot.sendMessage(chatId, priceText, { parse_mode: 'Markdown' });
+            await bot.sendMessage(chatId, infoText, { parse_mode: 'Markdown' });
             return;
         }
     }
@@ -652,14 +671,15 @@ bot.on('message', async (msg) => {
             const errorDiagnostics = diagnostics.filter(d => 
                 d.workDescription.toLowerCase().includes('xato') || 
                 d.workDescription.toLowerCase().includes('nosozlik') ||
-                d.additionalNotes.toLowerCase().includes('xato') ||
-                d.additionalNotes.toLowerCase().includes('nosozlik')
+                (d.additionalNotes && d.additionalNotes.toLowerCase().includes('xato')) ||
+                (d.additionalNotes && d.additionalNotes.toLowerCase().includes('nosozlik'))
             );
             
             const errorTypes = {};
             errorDiagnostics.forEach(d => {
-                const type = d.workDescription.split(' ')[0];
-                errorTypes[type] = (errorTypes[type] || 0) + 1;
+                const words = d.workDescription.split(' ');
+                const firstWord = words[0];
+                errorTypes[firstWord] = (errorTypes[firstWord] || 0) + 1;
             });
             
             if (errorDiagnostics.length === 0) {
@@ -704,8 +724,12 @@ bot.on('message', async (msg) => {
                     diagText += `➕ **Qo'shimcha:**\n${diag.additionalNotes}\n\n`;
                 }
                 
-                diagText += `💰 Narx: ${diag.price.toLocaleString()} so'm\n`;
-                diagText += `${diag.isFree ? '🎉 BEPUL' : '💵 To\'lovli'}\n`;
+                if (diag.price > 0) {
+                    diagText += `💰 Narx: ${diag.price.toLocaleString()} so'm\n`;
+                } else {
+                    diagText += `🎉 BEPUL diagnostika\n`;
+                }
+                
                 diagText += `━━━━━━━━━━━━━━━━━━\n`;
                 
                 await bot.sendMessage(chatId, diagText, { parse_mode: 'Markdown' });
