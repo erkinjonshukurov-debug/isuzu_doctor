@@ -1,20 +1,18 @@
 const TelegramBot = require('node-telegram-bot-api');
 const path = require('path');
 const fs = require('fs');
+const axios = require('axios');
 require('dotenv').config();
 
 // -------------------- TOKEN VA ADMIN --------------------
 const BOT_TOKEN = process.env.BOT_TOKEN;
 if (!BOT_TOKEN) {
     console.error('❌ BOT_TOKEN topilmadi!');
-    console.error('👉 Railway\'da Variables -> BOT_TOKEN qo\'shing!');
     process.exit(1);
 }
 
-// ADMIN TELEFON RAQAMI (SHU RAQAM ADMIN)
+// ADMIN TELEFON RAQAMI
 const ADMIN_PHONE = "+998979247888";
-
-// Admin ID lar (qo'shimcha, ixtiyoriy)
 const ADMIN_IDS = (process.env.ADMIN_IDS || '').split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
 
 // -------------------- BOT SOZLAMALARI --------------------
@@ -39,11 +37,17 @@ const bot = new TelegramBot(BOT_TOKEN, {
 
 // -------------------- MA'LUMOTLAR YO'LLARI --------------------
 const DB_PATH = path.join(__dirname, 'users.json');
+const PHOTOS_DIR = path.join(__dirname, 'user_photos');
+
+// Photos papkasini yaratish
+if (!fs.existsSync(PHOTOS_DIR)) {
+    fs.mkdirSync(PHOTOS_DIR, { recursive: true });
+    console.log('📁 user_photos papkasi yaratildi');
+}
 
 // -------------------- GLOBAL O'ZGARUVCHILAR --------------------
-let users = [];  // Foydalanuvchilar ro'yxati
-let adminUserId = null;  // Adminning Telegram ID si
-
+let users = [];
+let adminUserId = null;
 const userSessions = new Map();
 
 // -------------------- DATABASE FUNKSIYALARI --------------------
@@ -54,7 +58,6 @@ function loadUsers() {
             users = JSON.parse(data);
             console.log('✅ Foydalanuvchilar yuklandi');
             
-            // Admin ID ni topish
             const adminUser = users.find(u => u.phone === ADMIN_PHONE && u.isAdmin === true);
             if (adminUser) {
                 adminUserId = adminUser.userId;
@@ -85,20 +88,13 @@ function isAdminByPhone(phoneNumber) {
 }
 
 function isAdmin(userId) {
-    // Telegram ID bo'yicha tekshirish
     if (ADMIN_IDS.includes(userId)) return true;
-    
-    // Database'dan tekshirish
     const user = users.find(u => u.userId === userId);
     return user ? user.isAdmin === true : false;
 }
 
 function findUserByUserId(userId) {
     return users.find(u => u.userId === userId);
-}
-
-function findUserByPhone(phone) {
-    return users.find(u => u.phone === phone);
 }
 
 function getUserSession(userId) {
@@ -112,7 +108,7 @@ function clearUserSession(userId) {
     userSessions.delete(userId);
 }
 
-// -------------------- ADMIN KEYBOARD --------------------
+// -------------------- KEYBOARDS --------------------
 function getAdminKeyboard() {
     return {
         reply_markup: {
@@ -128,7 +124,6 @@ function getAdminKeyboard() {
     };
 }
 
-// -------------------- USER KEYBOARD --------------------
 function getUserKeyboard() {
     return {
         reply_markup: {
@@ -142,7 +137,6 @@ function getUserKeyboard() {
     };
 }
 
-// -------------------- TELEFON RAQAM SO'RASH --------------------
 function getPhoneKeyboard() {
     return {
         reply_markup: {
@@ -176,26 +170,13 @@ bot.onText(/\/start/, async (msg) => {
     const userId = msg.from.id;
     
     clearUserSession(userId);
-    
-    // Foydalanuvchi mavjudmi tekshirish
     const existingUser = findUserByUserId(userId);
     
     if (existingUser) {
-        // Foydalanuvchi mavjud
-        const isAdminUser = existingUser.isAdmin;
-        
-        const welcomeText = `👋 **Xush kelibsiz!**
-
-🚗 Avtomobil: ${existingUser.carNumber || 'Mavjud emas'}
-📞 Telefon: ${existingUser.phone}
-👑 Admin: ${isAdminUser ? 'Ha' : 'Yo\'q'}
-
-Quyidagi menyudan foydalaning.`;
-        
+        const welcomeText = `👋 **Xush kelibsiz!**\n\n🚗 Avtomobil: ${existingUser.carNumber}\n📞 Telefon: ${existingUser.phone}\n👑 Admin: ${existingUser.isAdmin ? 'Ha' : 'Yo\'q'}`;
         await bot.sendMessage(chatId, welcomeText, { parse_mode: 'Markdown' });
-        await sendMainMenu(chatId, isAdminUser);
+        await sendMainMenu(chatId, existingUser.isAdmin);
     } else {
-        // Yangi foydalanuvchi - telefon raqam so'rash
         await bot.sendMessage(chatId, '🚗 **ISUZU USER** tizimiga xush kelibsiz!\n\n📱 Iltimos, telefon raqamingizni yuboring:', {
             parse_mode: 'Markdown',
             ...getPhoneKeyboard()
@@ -220,10 +201,7 @@ bot.on('contact', async (msg) => {
     session.data.phone = phoneNumber;
     
     // ADMIN TEKSHIRISH
-    const isAdminUser = isAdminByPhone(phoneNumber);
-    
-    if (isAdminUser) {
-        // Admin bo'lsa, darhol admin qilib saqlash
+    if (isAdminByPhone(phoneNumber)) {
         const adminUser = {
             userId: userId,
             phone: phoneNumber,
@@ -241,20 +219,14 @@ bot.on('contact', async (msg) => {
         saveUsers();
         adminUserId = userId;
         
-        await bot.sendMessage(chatId, `👑 **Siz ADMIN sifatida tizimga kirdingiz!**
-
-📞 Telefon: ${phoneNumber}
-
-Admin panelidan foydalanishingiz mumkin.`, {
+        await bot.sendMessage(chatId, `👑 **Siz ADMIN sifatida tizimga kirdingiz!**\n\n📞 Telefon: ${phoneNumber}`, {
             parse_mode: 'Markdown'
         });
-        
         await sendMainMenu(chatId, true);
         clearUserSession(userId);
         return;
     }
     
-    // Oddiy foydalanuvchi - avtomobil raqam so'rash
     session.step = 'car_number';
     await bot.sendMessage(chatId, `✅ Telefon raqam qabul qilindi: ${phoneNumber}\n\n🚗 Endi avtomobil raqamini kiriting:`, {
         parse_mode: 'Markdown',
@@ -272,8 +244,6 @@ bot.onText(/^[A-Z0-9]{2,10}$/i, async (msg) => {
     if (session.step === 'car_number') {
         const carNumber = text.toUpperCase();
         session.data.carNumber = carNumber;
-        
-        // Rasm so'rash
         session.step = 'photo';
         await bot.sendMessage(chatId, `✅ Avtomobil raqam qabul qilindi: ${carNumber}\n\n📸 Endi avtomobil rasmini yuboring:`, {
             parse_mode: 'Markdown'
@@ -281,74 +251,86 @@ bot.onText(/^[A-Z0-9]{2,10}$/i, async (msg) => {
     }
 });
 
-// -------------------- RASM QABUL QILISH --------------------
+// -------------------- RASM QABUL QILISH (TUZATILGAN) --------------------
 bot.on('photo', async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
     const session = getUserSession(userId);
     
-    if (session.step === 'photo') {
-        const photoFile = msg.photo[msg.photo.length - 1];
+    // Faqat ro'yxatdan o'tish jarayonida rasm kutilayotgan bo'lsa
+    if (session.step !== 'photo') {
+        return;
+    }
+    
+    try {
+        // Eng yuqori sifatli rasmni olish
+        const photo = msg.photo[msg.photo.length - 1];
+        const fileId = photo.file_id;
         
-        // Rasmni saqlash
-        const photosDir = path.join(__dirname, 'user_photos');
-        if (!fs.existsSync(photosDir)) {
-            fs.mkdirSync(photosDir, { recursive: true });
-        }
+        // Fayl ma'lumotlarini olish
+        const file = await bot.getFile(fileId);
+        const filePath = file.file_path;
         
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const photoPath = path.join(photosDir, `${userId}_${timestamp}.jpg`);
+        // Rasmni yuklab olish URL'i
+        const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
         
-        try {
-            const file = await bot.getFile(photoFile.file_id);
-            const filePath = file.file_path;
-            const url = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
-            
-            // Faylni yuklab olish (oddiy usul)
-            const axios = require('axios');
-            const response = await axios({ url, responseType: 'stream' });
-            const writer = fs.createWriteStream(photoPath);
-            response.data.pipe(writer);
-            
-            await new Promise((resolve, reject) => {
-                writer.on('finish', resolve);
-                writer.on('error', reject);
-            });
-            
-            // Foydalanuvchini saqlash
-            const newUser = {
-                userId: userId,
-                phone: session.data.phone,
-                carNumber: session.data.carNumber,
-                photoPath: photoPath,
-                isAdmin: false,
-                isActive: true,
-                registeredDate: new Date().toISOString(),
-                bonusCount: 0,
-                freeDiagnostics: 0,
-                totalDiagnostics: 0
-            };
-            
-            users.push(newUser);
-            saveUsers();
-            
-            await bot.sendMessage(chatId, '✅ **Siz muvaffaqiyatli ro\'yxatdan o\'tdingiz!**\n\n🎁 **Bonus tizimi:** Har 5 diagnostikada 1 ta BEPUL!', {
-                parse_mode: 'Markdown'
-            });
-            
-            await sendMainMenu(chatId, false);
-            clearUserSession(userId);
-            
-        } catch (error) {
-            console.error('Rasm saqlashda xatolik:', error);
-            await bot.sendMessage(chatId, '❌ Rasm saqlashda xatolik yuz berdi. Qaytadan urinib ko\'ring.');
-        }
+        // Rasm nomini yaratish
+        const timestamp = Date.now();
+        const photoFilename = `${userId}_${timestamp}.jpg`;
+        const photoPath = path.join(PHOTOS_DIR, photoFilename);
+        
+        // Rasmni yuklab olish
+        const response = await axios({
+            method: 'GET',
+            url: fileUrl,
+            responseType: 'stream'
+        });
+        
+        // Faylga yozish
+        const writer = fs.createWriteStream(photoPath);
+        response.data.pipe(writer);
+        
+        await new Promise((resolve, reject) => {
+            writer.on('finish', resolve);
+            writer.on('error', reject);
+        });
+        
+        console.log(`✅ Rasm saqlandi: ${photoPath}`);
+        
+        // Foydalanuvchini saqlash
+        const newUser = {
+            userId: userId,
+            phone: session.data.phone,
+            carNumber: session.data.carNumber,
+            photoPath: photoFilename,
+            isAdmin: false,
+            isActive: true,
+            registeredDate: new Date().toISOString(),
+            bonusCount: 0,
+            freeDiagnostics: 0,
+            totalDiagnostics: 0
+        };
+        
+        users.push(newUser);
+        saveUsers();
+        
+        await bot.sendMessage(chatId, '✅ **Siz muvaffaqiyatli ro\'yxatdan o\'tdingiz!**\n\n🎁 **Bonus tizimi:** Har 5 diagnostikada 1 ta BEPUL!', {
+            parse_mode: 'Markdown'
+        });
+        
+        await sendMainMenu(chatId, false);
+        clearUserSession(userId);
+        
+    } catch (error) {
+        console.error('Rasm saqlashda xatolik:', error.message);
+        await bot.sendMessage(chatId, '❌ Rasm saqlashda xatolik yuz berdi. Iltimos, qaytadan urinib ko\'ring.\n\n💡 Maslahat: Kichikroq rasm yuborishga harakat qiling.', {
+            parse_mode: 'Markdown'
+        });
     }
 });
 
 // -------------------- ADMIN FUNKSIYALARI --------------------
 
-// Statistika
 bot.onText(/📊 Statistika/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -360,21 +342,13 @@ bot.onText(/📊 Statistika/, async (msg) => {
     
     const totalUsers = users.filter(u => !u.isAdmin).length;
     const totalAdmins = users.filter(u => u.isAdmin).length;
-    const activeUsers = users.filter(u => u.isActive).length;
     const totalDiagnostics = users.reduce((sum, u) => sum + (u.totalDiagnostics || 0), 0);
     
-    const stats = `📊 **STATISTIKA**
-
-👥 Jami foydalanuvchilar: ${totalUsers}
-👑 Adminlar: ${totalAdmins}
-✅ Faol foydalanuvchilar: ${activeUsers}
-🔧 Jami diagnostikalar: ${totalDiagnostics}
-📅 Oxirgi yangilanish: ${new Date().toLocaleString('uz-UZ')}`;
+    const stats = `📊 **STATISTIKA**\n\n👥 Foydalanuvchilar: ${totalUsers}\n👑 Adminlar: ${totalAdmins}\n🔧 Jami diagnostikalar: ${totalDiagnostics}\n📅 Sana: ${new Date().toLocaleString('uz-UZ')}`;
     
     await bot.sendMessage(chatId, stats, { parse_mode: 'Markdown' });
 });
 
-// Barcha foydalanuvchilar
 bot.onText(/👥 Foydalanuvchilar/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -391,29 +365,24 @@ bot.onText(/👥 Foydalanuvchilar/, async (msg) => {
         return;
     }
     
-    let userList = '👥 **FOYDALANUVCHILAR RO\'YXATI**\n\n';
+    let userList = '👥 **FOYDALANUVCHILAR**\n\n';
     for (const user of regularUsers.slice(-15).reverse()) {
-        userList += `🆔 ID: ${user.userId}\n🚗 ${user.carNumber}\n📞 ${user.phone}\n📅 ${new Date(user.registeredDate).toLocaleDateString()}\n🎁 Bonus: ${user.bonusCount}/5\n\n`;
+        userList += `🚗 ${user.carNumber}\n📞 ${user.phone}\n📅 ${new Date(user.registeredDate).toLocaleDateString()}\n🎁 ${user.bonusCount}/5\n\n`;
     }
     
     await bot.sendMessage(chatId, userList, { parse_mode: 'Markdown' });
 });
 
-// Asosiy menyu
 bot.onText(/❌ Asosiy menyu/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
-    const isAdminUser = isAdmin(userId);
-    
     clearUserSession(userId);
-    await sendMainMenu(chatId, isAdminUser);
+    await sendMainMenu(chatId, isAdmin(userId));
 });
 
-// Mening sahifam (foydalanuvchi)
 bot.onText(/📊 Mening sahifam/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
-    
     const user = findUserByUserId(userId);
     
     if (!user) {
@@ -421,23 +390,14 @@ bot.onText(/📊 Mening sahifam/, async (msg) => {
         return;
     }
     
-    const profile = `📊 **MENGING SAHIFAM**
-
-🚗 Avtomobil: ${user.carNumber}
-📞 Telefon: ${user.phone}
-📅 Ro'yxatdan o'tgan: ${new Date(user.registeredDate).toLocaleDateString()}
-🎁 Diagnostika soni: ${user.bonusCount}/5
-🎉 Bepul diagnostikalar: ${user.freeDiagnostics} ta
-📊 Jami diagnostikalar: ${user.totalDiagnostics} ta`;
+    const profile = `📊 **MENGING SAHIFAM**\n\n🚗 Avtomobil: ${user.carNumber}\n📞 Telefon: ${user.phone}\n📅 Ro\'yxat: ${new Date(user.registeredDate).toLocaleDateString()}\n🎁 Bonus: ${user.bonusCount}/5\n🎉 Bepul: ${user.freeDiagnostics} ta\n📊 Jami: ${user.totalDiagnostics} ta`;
     
     await bot.sendMessage(chatId, profile, { parse_mode: 'Markdown' });
 });
 
-// Mening bonuslarim
 bot.onText(/🎁 Mening bonuslarim/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
-    
     const user = findUserByUserId(userId);
     
     if (!user) {
@@ -446,13 +406,7 @@ bot.onText(/🎁 Mening bonuslarim/, async (msg) => {
     }
     
     const nextFree = 5 - user.bonusCount;
-    const bonusText = `🎁 **MENGING BONUSLARIM**
-
-📊 Joriy diagnostika soni: ${user.bonusCount}/5
-🎉 Bepul diagnostikalar: ${user.freeDiagnostics} ta
-${nextFree > 0 ? `📌 Keyingi BEPUL: ${nextFree} ta diagnostikadan keyin` : '🎉 Siz BEPUL diagnostika qozondingiz!'}
-
-🎯 Qoida: Har 5 diagnostikada 1 ta BEPUL!`;
+    const bonusText = `🎁 **MENGING BONUSLARIM**\n\n📊 Joriy: ${user.bonusCount}/5\n🎉 Bepul: ${user.freeDiagnostics} ta\n${nextFree > 0 ? `📌 Keyingi BEPUL: ${nextFree} ta` : '🎉 BEPUL diagnostika qozondingiz!'}\n\n🎯 Har 5 diagnostikada 1 ta BEPUL!`;
     
     await bot.sendMessage(chatId, bonusText, { parse_mode: 'Markdown' });
 });
@@ -463,34 +417,22 @@ bot.on('message', async (msg) => {
     const userId = msg.from.id;
     const text = msg.text;
     
-    // Agar rasm bo'lsa, yuqorida ishlov beriladi
     if (msg.photo) return;
     if (msg.contact) return;
     if (!text) return;
-    
-    // Komandalarni o'tkazib yuborish
     if (text === '/start') return;
-    if (text === '📊 Statistika') return;
-    if (text === '👥 Foydalanuvchilar') return;
-    if (text === '❌ Asosiy menyu') return;
-    if (text === '📊 Mening sahifam') return;
-    if (text === '🎁 Mening bonuslarim') return;
     
     const session = getUserSession(userId);
     
-    // Ro'yxatdan o'tish jarayonida avtomobil raqam kutilmoqda
     if (session.step === 'car_number' && /^[A-Z0-9]{2,10}$/i.test(text)) {
-        // Yuqoridagi regex bilan ishlov beriladi
         return;
     }
     
-    // Agar boshqa holatda bo'lsa
     if (!session.step) {
-        const isAdminUser = isAdmin(userId);
-        await bot.sendMessage(chatId, '❌ **Tushunarsiz buyruq!** Iltimos, menyudan foydalaning.', {
+        await bot.sendMessage(chatId, '❌ **Tushunarsiz buyruq!** Menyudan foydalaning.', {
             parse_mode: 'Markdown'
         });
-        await sendMainMenu(chatId, isAdminUser);
+        await sendMainMenu(chatId, isAdmin(userId));
     }
 });
 
@@ -508,14 +450,13 @@ console.log('='.repeat(60));
 console.log('🚗 ISUZU DOCTOR BOT ISHGA TUSHMOQDA');
 console.log('='.repeat(60));
 
-// Foydalanuvchilarni yuklash
 loadUsers();
 
 console.log('='.repeat(60));
 console.log('🚗 ISUZU DOCTOR BOT ISHGA TUSHDI');
 console.log('='.repeat(60));
 console.log(`👑 Admin telefon: ${ADMIN_PHONE}`);
-console.log(`👥 Jami foydalanuvchilar: ${users.filter(u => !u.isAdmin).length}`);
+console.log(`👥 Foydalanuvchilar: ${users.filter(u => !u.isAdmin).length}`);
 console.log('='.repeat(60));
 
 console.log('✅ Bot ishlashga tayyor!');
