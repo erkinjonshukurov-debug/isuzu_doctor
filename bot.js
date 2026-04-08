@@ -1,7 +1,6 @@
 const TelegramBot = require('node-telegram-bot-api');
 const path = require('path');
 const fs = require('fs');
-const sqlite3 = require('sqlite3').verbose();
 
 // -------------------- TOKEN VA ADMIN --------------------
 const BOT_TOKEN = process.env.BOT_TOKEN || '8779251766:AAH12INusgBCawsk5awqIjcyHnNLiq5A33A';
@@ -10,10 +9,11 @@ const ADMIN_PHONE = "+998979247888";
 const ADMIN_IDS = [1437230485];
 const DIAGNOSTIC_PRICE = 250000;
 
-// BACKUP SOZLAMALARI
+// -------------------- MA'LUMOTLAR YO'LLARI --------------------
+const USERS_FILE = path.join(__dirname, 'users.json');
+const DIAGNOSTICS_FILE = path.join(__dirname, 'diagnostics.json');
+const ERRORS_FILE = path.join(__dirname, 'errors.json');
 const BACKUP_DIR = path.join(__dirname, 'backups');
-const DB_PATH = path.join(__dirname, 'isuzu_doctor.db');
-const MAX_BACKUPS = 20;
 
 // -------------------- BOT SOZLAMALARI --------------------
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
@@ -23,265 +23,256 @@ bot.deleteWebHook().catch(e => console.log('Webhook xatolik:', e.message));
 function ensureBackupDir() {
     if (!fs.existsSync(BACKUP_DIR)) {
         fs.mkdirSync(BACKUP_DIR, { recursive: true });
-        console.log('📁 Backup papkasi yaratildi');
     }
 }
 
 function createBackup() {
-    return new Promise((resolve, reject) => {
-        ensureBackupDir();
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-        const backupFile = path.join(BACKUP_DIR, `isuzu_doctor_backup_${timestamp}.db`);
-        
-        if (fs.existsSync(DB_PATH)) {
-            fs.copyFile(DB_PATH, backupFile, (err) => {
-                if (err) reject(err);
-                else {
-                    cleanOldBackups();
-                    resolve(backupFile);
-                }
-            });
-        } else {
-            reject(new Error('Database fayli topilmadi'));
-        }
-    });
-}
-
-function cleanOldBackups() {
-    fs.readdir(BACKUP_DIR, (err, files) => {
-        if (err) return;
-        const backupFiles = files.filter(f => f.startsWith('isuzu_doctor_backup_') && f.endsWith('.db'))
-            .map(f => ({ name: f, path: path.join(BACKUP_DIR, f), time: fs.statSync(path.join(BACKUP_DIR, f)).mtime.getTime() }))
-            .sort((a, b) => b.time - a.time);
-        
-        if (backupFiles.length > MAX_BACKUPS) {
-            backupFiles.slice(MAX_BACKUPS).forEach(file => fs.unlinkSync(file.path));
-        }
-    });
+    ensureBackupDir();
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    
+    if (fs.existsSync(USERS_FILE)) {
+        fs.copyFileSync(USERS_FILE, path.join(BACKUP_DIR, `users_backup_${timestamp}.json`));
+    }
+    if (fs.existsSync(DIAGNOSTICS_FILE)) {
+        fs.copyFileSync(DIAGNOSTICS_FILE, path.join(BACKUP_DIR, `diagnostics_backup_${timestamp}.json`));
+    }
+    if (fs.existsSync(ERRORS_FILE)) {
+        fs.copyFileSync(ERRORS_FILE, path.join(BACKUP_DIR, `errors_backup_${timestamp}.json`));
+    }
+    
+    // Eski backup'larni tozalash
+    const backups = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.json'));
+    while (backups.length > 30) {
+        const oldest = backups.sort()[0];
+        fs.unlinkSync(path.join(BACKUP_DIR, oldest));
+        backups.shift();
+    }
+    return true;
 }
 
 function listBackups() {
-    return new Promise((resolve, reject) => {
-        ensureBackupDir();
-        fs.readdir(BACKUP_DIR, (err, files) => {
-            if (err) reject(err);
-            else {
-                const backups = files.filter(f => f.startsWith('isuzu_doctor_backup_') && f.endsWith('.db'))
-                    .map(f => ({ name: f, path: path.join(BACKUP_DIR, f), date: fs.statSync(path.join(BACKUP_DIR, f)).mtime }))
-                    .sort((a, b) => b.date - a.date);
-                resolve(backups);
-            }
-        });
-    });
+    ensureBackupDir();
+    const backups = fs.readdirSync(BACKUP_DIR)
+        .filter(f => f.startsWith('users_backup_') && f.endsWith('.json'))
+        .map(f => ({
+            name: f,
+            date: fs.statSync(path.join(BACKUP_DIR, f)).mtime
+        }))
+        .sort((a, b) => b.date - a.date);
+    return backups;
 }
 
 function restoreBackup(backupName) {
-    return new Promise((resolve, reject) => {
-        const backupPath = path.join(BACKUP_DIR, backupName);
-        if (!fs.existsSync(backupPath)) reject(new Error('Backup fayli topilmadi'));
-        else {
-            createBackup().catch(() => {});
-            fs.copyFile(backupPath, DB_PATH, (err) => {
-                if (err) reject(err);
-                else {
-                    if (db) db.close();
-                    initDatabase();
-                    resolve(backupPath);
-                }
-            });
-        }
-    });
-}
-
-// -------------------- DATABASE YARATISH --------------------
-let db;
-
-function initDatabase() {
-    db = new sqlite3.Database(DB_PATH);
+    const backupPath = path.join(BACKUP_DIR, backupName);
+    if (!fs.existsSync(backupPath)) return false;
     
-    db.run(`CREATE TABLE IF NOT EXISTS users (
-        user_id INTEGER PRIMARY KEY,
-        phone_number TEXT NOT NULL,
-        car_number TEXT NOT NULL,
-        is_admin INTEGER DEFAULT 0,
-        is_active INTEGER DEFAULT 1,
-        registered_date TEXT NOT NULL,
-        bonus_count INTEGER DEFAULT 0,
-        free_diagnostics INTEGER DEFAULT 0,
-        total_diagnostics INTEGER DEFAULT 0
-    )`);
+    // Backup'dan foydalanuvchilarni tiklash
+    const backupData = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
+    fs.writeFileSync(USERS_FILE, JSON.stringify(backupData, null, 2));
     
-    db.run(`CREATE TABLE IF NOT EXISTS diagnostics (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        car_number TEXT NOT NULL,
-        phone_number TEXT NOT NULL,
-        diagnostic_date TEXT NOT NULL,
-        work_description TEXT NOT NULL,
-        additional_notes TEXT,
-        price INTEGER DEFAULT 0,
-        is_free INTEGER DEFAULT 0,
-        FOREIGN KEY (user_id) REFERENCES users (user_id)
-    )`);
-    
-    db.run(`CREATE TABLE IF NOT EXISTS errors (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        car_number TEXT NOT NULL,
-        error_date TEXT NOT NULL,
-        error_code TEXT,
-        error_description TEXT,
-        status TEXT DEFAULT 'pending',
-        FOREIGN KEY (user_id) REFERENCES users (user_id)
-    )`);
-    
-    db.run(`CREATE TABLE IF NOT EXISTS service_queue (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        car_number TEXT NOT NULL,
-        phone_number TEXT NOT NULL,
-        queue_number INTEGER,
-        status TEXT DEFAULT 'waiting',
-        created_at TEXT NOT NULL,
-        notified_at TEXT,
-        completed_at TEXT,
-        cancelled_at TEXT,
-        FOREIGN KEY (user_id) REFERENCES users (user_id)
-    )`);
-    
-    console.log('✅ Ma\'lumotlar bazasi yaratildi/yuklandi');
-}
-
-// -------------------- DATABASE FUNKSIYALARI --------------------
-function userExists(userId, callback) {
-    db.get('SELECT user_id FROM users WHERE user_id = ?', [userId], (err, row) => {
-        callback(err, !!row);
-    });
-}
-
-function getUser(userId, callback) {
-    db.get('SELECT * FROM users WHERE user_id = ?', [userId], callback);
-}
-
-function getUserByCarNumber(carNumber, callback) {
-    db.get('SELECT * FROM users WHERE car_number = ?', [carNumber], callback);
-}
-
-function getAllUsers(callback) {
-    db.all('SELECT * FROM users WHERE is_admin = 0 ORDER BY registered_date DESC', [], callback);
-}
-
-function addUser(userId, phoneNumber, carNumber, callback) {
-    const registeredDate = new Date().toISOString();
-    db.run(`INSERT INTO users (user_id, phone_number, car_number, registered_date, bonus_count, free_diagnostics, total_diagnostics)
-            VALUES (?, ?, ?, ?, 0, 0, 0)`, 
-            [userId, phoneNumber, carNumber, registeredDate], callback);
-}
-
-function isAdmin(userId, callback) {
-    if (ADMIN_IDS.includes(userId)) {
-        callback(null, true);
-        return;
+    // Diagnostika backup'ini ham tiklash
+    const diagBackupName = backupName.replace('users_backup_', 'diagnostics_backup_');
+    const diagBackupPath = path.join(BACKUP_DIR, diagBackupName);
+    if (fs.existsSync(diagBackupPath)) {
+        const diagData = JSON.parse(fs.readFileSync(diagBackupPath, 'utf8'));
+        fs.writeFileSync(DIAGNOSTICS_FILE, JSON.stringify(diagData, null, 2));
     }
-    db.get('SELECT is_admin FROM users WHERE user_id = ?', [userId], (err, row) => {
-        callback(err, row ? row.is_admin === 1 : false);
-    });
-}
-
-function addDiagnostic(userId, carNumber, phoneNumber, workDescription, additionalNotes, callback) {
-    const diagnosticDate = new Date().toISOString();
     
-    getUser(userId, (err, user) => {
-        if (err || !user) {
-            callback(err || new Error('Foydalanuvchi topilmadi'), null);
-            return;
-        }
-        
-        let isFree = false;
-        let newBonusCount = user.bonus_count;
-        let newFreeDiagnostics = user.free_diagnostics;
-        let bonusMessage = '';
-        
-        if (user.free_diagnostics > 0) {
-            isFree = true;
-            newFreeDiagnostics--;
-            bonusMessage = '🎉 BEPUL diagnostikadan foydalandingiz!';
+    return true;
+}
+
+// -------------------- DATABASE FUNKSIYALARI (JSON) --------------------
+let users = [];
+let diagnostics = [];
+let errors = [];
+
+function loadData() {
+    try {
+        if (fs.existsSync(USERS_FILE)) {
+            users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
         } else {
-            newBonusCount++;
-            if (newBonusCount >= 5) {
-                const bonusCount = Math.floor(newBonusCount / 5);
-                newFreeDiagnostics += bonusCount;
-                newBonusCount = newBonusCount % 5;
-                bonusMessage = '🎉🎉🎉 TABRIKLAYMIZ! 5-diagnostikani tugatdingiz va 1 ta BEPUL diagnostika qozondingiz!';
-            }
+            users = [];
+            saveUsers();
         }
         
-        db.run(`INSERT INTO diagnostics (user_id, car_number, phone_number, diagnostic_date, work_description, additional_notes, price, is_free)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-                [userId, carNumber, phoneNumber, diagnosticDate, workDescription, additionalNotes || '', isFree ? 0 : DIAGNOSTIC_PRICE, isFree ? 1 : 0],
-                function(err) {
-                    if (err) {
-                        callback(err, null);
-                        return;
-                    }
-                    
-                    db.run(`UPDATE users SET 
-                            bonus_count = ?, 
-                            free_diagnostics = ?, 
-                            total_diagnostics = total_diagnostics + 1 
-                            WHERE user_id = ?`,
-                            [newBonusCount, newFreeDiagnostics, userId], (err2) => {
-                                callback(err2, {
-                                    success: true,
-                                    isFree: isFree,
-                                    price: isFree ? 0 : DIAGNOSTIC_PRICE,
-                                    newBonusCount: newBonusCount,
-                                    newFreeDiagnostics: newFreeDiagnostics,
-                                    bonusMessage: bonusMessage
-                                });
-                            });
-                });
-    });
+        if (fs.existsSync(DIAGNOSTICS_FILE)) {
+            diagnostics = JSON.parse(fs.readFileSync(DIAGNOSTICS_FILE, 'utf8'));
+        } else {
+            diagnostics = [];
+            saveDiagnostics();
+        }
+        
+        if (fs.existsSync(ERRORS_FILE)) {
+            errors = JSON.parse(fs.readFileSync(ERRORS_FILE, 'utf8'));
+        } else {
+            errors = [];
+            saveErrors();
+        }
+        
+        console.log(`✅ Yuklandi: ${users.length} foydalanuvchi, ${diagnostics.length} diagnostika`);
+    } catch (err) {
+        console.error('Ma\'lumot yuklashda xatolik:', err);
+        users = [];
+        diagnostics = [];
+        errors = [];
+    }
 }
 
-function getUserDiagnostics(userId, limit = 10, callback) {
-    db.all(`SELECT * FROM diagnostics WHERE user_id = ? ORDER BY diagnostic_date DESC LIMIT ?`, [userId, limit], callback);
+function saveUsers() {
+    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
 }
 
-function getNearBonusUsers(callback) {
-    db.all(`SELECT * FROM users WHERE is_admin = 0 AND bonus_count >= 3 AND bonus_count < 5 ORDER BY bonus_count DESC`, [], callback);
+function saveDiagnostics() {
+    fs.writeFileSync(DIAGNOSTICS_FILE, JSON.stringify(diagnostics, null, 2));
 }
 
-function getTodayDiagnostics(callback) {
+function saveErrors() {
+    fs.writeFileSync(ERRORS_FILE, JSON.stringify(errors, null, 2));
+}
+
+function userExists(userId) {
+    return users.some(u => u.userId === userId);
+}
+
+function getUser(userId) {
+    return users.find(u => u.userId === userId);
+}
+
+function getUserByCarNumber(carNumber) {
+    return users.find(u => u.carNumber === carNumber);
+}
+
+function getAllUsers() {
+    return users.filter(u => !u.isAdmin);
+}
+
+function addUser(userId, phoneNumber, carNumber) {
+    const newUser = {
+        userId: userId,
+        phone: phoneNumber,
+        carNumber: carNumber,
+        isAdmin: false,
+        isActive: true,
+        registeredDate: new Date().toISOString(),
+        bonusCount: 0,
+        freeDiagnostics: 0,
+        totalDiagnostics: 0
+    };
+    users.push(newUser);
+    saveUsers();
+    return newUser;
+}
+
+function isAdmin(userId) {
+    if (ADMIN_IDS.includes(userId)) return true;
+    const user = getUser(userId);
+    return user ? user.isAdmin === true : false;
+}
+
+function addDiagnostic(userId, carNumber, phoneNumber, workDescription, additionalNotes) {
+    const user = getUser(userId);
+    if (!user) return { success: false, message: 'Foydalanuvchi topilmadi' };
+    
+    let isFree = false;
+    let bonusMessage = '';
+    let newBonusCount = user.bonusCount;
+    let newFreeDiagnostics = user.freeDiagnostics;
+    
+    if (user.freeDiagnostics > 0) {
+        isFree = true;
+        newFreeDiagnostics--;
+        bonusMessage = '🎉 BEPUL diagnostikadan foydalandingiz!';
+    } else {
+        newBonusCount++;
+        if (newBonusCount >= 5) {
+            const bonusCount = Math.floor(newBonusCount / 5);
+            newFreeDiagnostics += bonusCount;
+            newBonusCount = newBonusCount % 5;
+            bonusMessage = '🎉🎉🎉 TABRIKLAYMIZ! 5-diagnostikani tugatdingiz va 1 ta BEPUL diagnostika qozondingiz!';
+        }
+    }
+    
+    // Diagnostikani qo'shish
+    const diagnostic = {
+        id: Date.now(),
+        userId: userId,
+        carNumber: carNumber,
+        phoneNumber: phoneNumber,
+        date: new Date().toISOString(),
+        workDescription: workDescription,
+        additionalNotes: additionalNotes || '',
+        price: isFree ? 0 : DIAGNOSTIC_PRICE,
+        isFree: isFree
+    };
+    diagnostics.push(diagnostic);
+    saveDiagnostics();
+    
+    // Foydalanuvchini yangilash
+    user.bonusCount = newBonusCount;
+    user.freeDiagnostics = newFreeDiagnostics;
+    user.totalDiagnostics++;
+    saveUsers();
+    
+    return {
+        success: true,
+        isFree: isFree,
+        price: isFree ? 0 : DIAGNOSTIC_PRICE,
+        newBonusCount: newBonusCount,
+        newFreeDiagnostics: newFreeDiagnostics,
+        bonusMessage: bonusMessage
+    };
+}
+
+function getUserDiagnostics(userId, limit = 10) {
+    return diagnostics.filter(d => d.userId === userId).slice(-limit).reverse();
+}
+
+function getNearBonusUsers() {
+    return users.filter(u => !u.isAdmin && u.bonusCount >= 3 && u.bonusCount < 5);
+}
+
+function getTodayDiagnostics() {
     const today = new Date().toISOString().split('T')[0];
-    db.all(`SELECT * FROM diagnostics WHERE date(diagnostic_date) = ? ORDER BY diagnostic_date DESC`, [today], callback);
+    return diagnostics.filter(d => d.date.split('T')[0] === today);
 }
 
-function getAllDiagnostics(limit = 50, callback) {
-    db.all(`SELECT * FROM diagnostics ORDER BY diagnostic_date DESC LIMIT ?`, [limit], callback);
+function getAllDiagnostics(limit = 50) {
+    return diagnostics.slice(-limit).reverse();
 }
 
-function getStatistics(callback) {
-    db.get(`SELECT 
-            (SELECT COUNT(*) FROM users WHERE is_admin = 0) as total_users,
-            (SELECT COUNT(*) FROM diagnostics) as total_diagnostics,
-            (SELECT COUNT(*) FROM diagnostics WHERE is_free = 1) as free_diagnostics,
-            (SELECT COUNT(*) FROM diagnostics WHERE is_free = 0) as paid_diagnostics,
-            (SELECT SUM(price) FROM diagnostics WHERE is_free = 0) as total_income,
-            (SELECT COUNT(*) FROM errors) as total_errors,
-            (SELECT COUNT(*) FROM errors WHERE status = 'pending') as pending_errors
-            `, [], callback);
+function getStatistics() {
+    const regularUsers = users.filter(u => !u.isAdmin);
+    const paidDiagnostics = diagnostics.filter(d => !d.isFree);
+    const totalIncome = paidDiagnostics.reduce((sum, d) => sum + d.price, 0);
+    
+    return {
+        totalUsers: regularUsers.length,
+        totalDiagnostics: diagnostics.length,
+        paidDiagnostics: paidDiagnostics.length,
+        freeDiagnostics: diagnostics.filter(d => d.isFree).length,
+        totalIncome: totalIncome,
+        totalErrors: errors.length,
+        pendingErrors: errors.filter(e => e.status === 'pending').length
+    };
 }
 
-function addError(userId, carNumber, errorCode, errorDescription, callback) {
-    const errorDate = new Date().toISOString();
-    db.run(`INSERT INTO errors (user_id, car_number, error_date, error_code, error_description, status)
-            VALUES (?, ?, ?, ?, ?, 'pending')`,
-            [userId, carNumber, errorDate, errorCode, errorDescription], callback);
+function addError(userId, carNumber, errorCode, errorDescription) {
+    const error = {
+        id: Date.now(),
+        userId: userId,
+        carNumber: carNumber,
+        date: new Date().toISOString(),
+        errorCode: errorCode,
+        errorDescription: errorDescription,
+        status: 'pending'
+    };
+    errors.push(error);
+    saveErrors();
+    return error;
 }
 
-function getErrors(callback) {
-    db.all(`SELECT * FROM errors ORDER BY error_date DESC LIMIT 50`, [], callback);
+function getErrors() {
+    return errors.slice(-50).reverse();
 }
 
 // -------------------- KEYBOARDS --------------------
@@ -365,24 +356,17 @@ bot.onText(/\/start/, async (msg) => {
     
     clearUserSession(userId);
     
-    userExists(userId, (err, exists) => {
-        if (exists) {
-            getUser(userId, (err, user) => {
-                if (user) {
-                    const welcomeText = `👋 **Xush kelibsiz!**\n\n🚗 Avtomobil: ${user.car_number}\n📞 Telefon: ${user.phone_number}\n🎁 Bonus: ${user.bonus_count}/5\n🎉 Bepul: ${user.free_diagnostics} ta\n📊 Jami: ${user.total_diagnostics} ta diagnostika`;
-                    bot.sendMessage(chatId, welcomeText, { parse_mode: 'Markdown' });
-                    sendMainMenu(chatId, user.is_admin === 1);
-                } else {
-                    sendMainMenu(chatId, false);
-                }
-            });
-        } else {
-            bot.sendMessage(chatId, '🚗 **ISUZU DOCTOR** tizimiga xush kelibsiz!\n\n📱 Iltimos, telefon raqamingizni yuboring:', {
-                parse_mode: 'Markdown',
-                ...getPhoneKeyboard()
-            });
-        }
-    });
+    if (userExists(userId)) {
+        const user = getUser(userId);
+        const welcomeText = `👋 **Xush kelibsiz!**\n\n🚗 Avtomobil: ${user.carNumber}\n📞 Telefon: ${user.phone}\n🎁 Bonus: ${user.bonusCount}/5\n🎉 Bepul: ${user.freeDiagnostics} ta\n📊 Jami: ${user.totalDiagnostics} ta diagnostika`;
+        bot.sendMessage(chatId, welcomeText, { parse_mode: 'Markdown' });
+        sendMainMenu(chatId, user.isAdmin);
+    } else {
+        bot.sendMessage(chatId, '🚗 **ISUZU DOCTOR** tizimiga xush kelibsiz!\n\n📱 Iltimos, telefon raqamingizni yuboring:', {
+            parse_mode: 'Markdown',
+            ...getPhoneKeyboard()
+        });
+    }
 });
 
 // -------------------- KONTAKT QABUL QILISH --------------------
@@ -402,13 +386,23 @@ bot.on('contact', async (msg) => {
     session.data.phone = phoneNumber;
     
     if (phoneNumber === ADMIN_PHONE) {
-        const registeredDate = new Date().toISOString();
-        db.run(`INSERT OR REPLACE INTO users (user_id, phone_number, car_number, is_admin, registered_date, bonus_count, free_diagnostics, total_diagnostics)
-                VALUES (?, ?, 'ADMIN', 1, ?, 0, 0, 0)`, [userId, phoneNumber, registeredDate], () => {
-            bot.sendMessage(chatId, `👑 **Siz ADMIN sifatida tizimga kirdingiz!**\n\n📞 Telefon: ${phoneNumber}`, { parse_mode: 'Markdown' });
-            sendMainMenu(chatId, true);
-            clearUserSession(userId);
-        });
+        const newUser = {
+            userId: userId,
+            phone: phoneNumber,
+            carNumber: "ADMIN",
+            isAdmin: true,
+            isActive: true,
+            registeredDate: new Date().toISOString(),
+            bonusCount: 0,
+            freeDiagnostics: 0,
+            totalDiagnostics: 0
+        };
+        users.push(newUser);
+        saveUsers();
+        
+        bot.sendMessage(chatId, `👑 **Siz ADMIN sifatida tizimga kirdingiz!**\n\n📞 Telefon: ${phoneNumber}`, { parse_mode: 'Markdown' });
+        sendMainMenu(chatId, true);
+        clearUserSession(userId);
         return;
     }
     
@@ -441,32 +435,27 @@ bot.on('message', async (msg) => {
             return;
         }
         
-        addUser(userId, session.data.phone, carNumber, (err) => {
-            if (err) {
-                bot.sendMessage(chatId, '❌ **Xatolik yuz berdi!** Qaytadan /start bosing.', { parse_mode: 'Markdown' });
-                return;
-            }
-            
-            bot.sendMessage(chatId, `✅ **Siz muvaffaqiyatli ro'yxatdan o'tdingiz!**\n\n🚗 Avtomobil: ${carNumber}\n📞 Telefon: ${session.data.phone}\n\n🎁 **Bonus tizimi:** Har 5 diagnostikada 1 ta BEPUL!`, { parse_mode: 'Markdown' });
-            sendMainMenu(chatId, false);
-            clearUserSession(userId);
-        });
+        addUser(userId, session.data.phone, carNumber);
+        
+        bot.sendMessage(chatId, `✅ **Siz muvaffaqiyatli ro'yxatdan o'tdingiz!**\n\n🚗 Avtomobil: ${carNumber}\n📞 Telefon: ${session.data.phone}\n\n🎁 **Bonus tizimi:** Har 5 diagnostikada 1 ta BEPUL!`, { parse_mode: 'Markdown' });
+        sendMainMenu(chatId, false);
+        clearUserSession(userId);
         return;
     }
     
     // ADMIN DIAGNOSTIKA QO'SHISH
     if (session.step === 'admin_add_diagnostic') {
         const carNumber = text.toUpperCase().trim();
-        getUserByCarNumber(carNumber, (err, user) => {
-            if (!user) {
-                bot.sendMessage(chatId, '❌ **Bunday avtomobil topilmadi!**\n\nIltimos, to\'g\'ri avtomobil raqamini kiriting:', { parse_mode: 'Markdown' });
-                return;
-            }
-            
-            session.data.targetUser = user;
-            session.step = 'admin_work_description';
-            bot.sendMessage(chatId, `✅ Foydalanuvchi topildi:\n\n🚗 ${user.car_number}\n📞 ${user.phone_number}\n🎁 Bonus: ${user.bonus_count}/5\n🎉 Bepul: ${user.free_diagnostics}\n\n🔧 **Bajarilgan ishlarni kiriting:**`, { parse_mode: 'Markdown' });
-        });
+        const user = getUserByCarNumber(carNumber);
+        
+        if (!user) {
+            bot.sendMessage(chatId, '❌ **Bunday avtomobil topilmadi!**\n\nIltimos, to\'g\'ri avtomobil raqamini kiriting:', { parse_mode: 'Markdown' });
+            return;
+        }
+        
+        session.data.targetUser = user;
+        session.step = 'admin_work_description';
+        bot.sendMessage(chatId, `✅ Foydalanuvchi topildi:\n\n🚗 ${user.carNumber}\n📞 ${user.phone}\n🎁 Bonus: ${user.bonusCount}/5\n🎉 Bepul: ${user.freeDiagnostics}\n\n🔧 **Bajarilgan ishlarni kiriting:**`, { parse_mode: 'Markdown' });
         return;
     }
     
@@ -480,147 +469,132 @@ bot.on('message', async (msg) => {
     if (session.step === 'admin_additional_notes') {
         session.data.additionalNotes = text === '❌ Bekor qilish' ? '' : text;
         
-        addDiagnostic(
-            session.data.targetUser.user_id,
-            session.data.targetUser.car_number,
-            session.data.targetUser.phone_number,
+        const result = addDiagnostic(
+            session.data.targetUser.userId,
+            session.data.targetUser.carNumber,
+            session.data.targetUser.phone,
             session.data.workDescription,
-            session.data.additionalNotes,
-            (err, result) => {
-                if (err) {
-                    bot.sendMessage(chatId, '❌ **Xatolik yuz berdi!**', { parse_mode: 'Markdown' });
-                    clearUserSession(userId);
-                    sendMainMenu(chatId, true);
-                    return;
-                }
-                
-                let adminResponse = `🔧 **DIAGNOSTIKA QO'SHILDI**\n\n🚗 ${session.data.targetUser.car_number}\n📞 ${session.data.targetUser.phone_number}\n💰 Narx: ${result.price.toLocaleString()} so'm\n\n${result.bonusMessage}`;
-                bot.sendMessage(chatId, adminResponse, { parse_mode: 'Markdown' });
-                
-                let userMsg = `🔧 **DIAGNOSTIKA NATIJALARI**\n\n🚗 ${session.data.targetUser.car_number}\n📝 ${session.data.workDescription}\n\n💰 Narx: ${result.price.toLocaleString()} so'm\n\n${result.bonusMessage}`;
-                bot.sendMessage(session.data.targetUser.user_id, userMsg, { parse_mode: 'Markdown' }).catch(() => {});
-                
-                clearUserSession(userId);
-                sendMainMenu(chatId, true);
-            });
+            session.data.additionalNotes
+        );
+        
+        if (!result.success) {
+            bot.sendMessage(chatId, '❌ **Xatolik yuz berdi!**', { parse_mode: 'Markdown' });
+            clearUserSession(userId);
+            sendMainMenu(chatId, true);
+            return;
+        }
+        
+        let adminResponse = `🔧 **DIAGNOSTIKA QO'SHILDI**\n\n🚗 ${session.data.targetUser.carNumber}\n📞 ${session.data.targetUser.phone}\n💰 Narx: ${result.price.toLocaleString()} so'm\n\n${result.bonusMessage}`;
+        bot.sendMessage(chatId, adminResponse, { parse_mode: 'Markdown' });
+        
+        let userMsg = `🔧 **DIAGNOSTIKA NATIJALARI**\n\n🚗 ${session.data.targetUser.carNumber}\n📝 ${session.data.workDescription}\n\n💰 Narx: ${result.price.toLocaleString()} so'm\n\n${result.bonusMessage}`;
+        bot.sendMessage(session.data.targetUser.userId, userMsg, { parse_mode: 'Markdown' }).catch(() => {});
+        
+        clearUserSession(userId);
+        sendMainMenu(chatId, true);
         return;
     }
     
     // FOYDALANUVCHI MENYUSI
-    isAdmin(userId, (err, isAdminUser) => {
-        if (!isAdminUser) {
-            if (text === '📊 Mening sahifam') {
-                getUser(userId, (err, user) => {
-                    if (!user) { bot.sendMessage(chatId, '❌ Ro\'yxatdan o\'tmagan!'); return; }
-                    bot.sendMessage(chatId, `📊 **MENGING SAHIFAM**\n\n🚗 ${user.car_number}\n📞 ${user.phone_number}\n🎁 Bonus: ${user.bonus_count}/5\n🎉 Bepul: ${user.free_diagnostics} ta\n📊 Jami: ${user.total_diagnostics} ta`, { parse_mode: 'Markdown' });
-                });
+    if (!isAdmin(userId)) {
+        if (text === '📊 Mening sahifam') {
+            const user = getUser(userId);
+            if (!user) { bot.sendMessage(chatId, '❌ Ro\'yxatdan o\'tmagan!'); return; }
+            bot.sendMessage(chatId, `📊 **MENGING SAHIFAM**\n\n🚗 ${user.carNumber}\n📞 ${user.phone}\n🎁 Bonus: ${user.bonusCount}/5\n🎉 Bepul: ${user.freeDiagnostics} ta\n📊 Jami: ${user.totalDiagnostics} ta`, { parse_mode: 'Markdown' });
+        }
+        else if (text === '🎁 Mening bonuslarim') {
+            const user = getUser(userId);
+            if (!user) { bot.sendMessage(chatId, '❌ Ro\'yxatdan o\'tmagan!'); return; }
+            const nextFree = 5 - user.bonusCount;
+            bot.sendMessage(chatId, `🎁 **MENGING BONUSLARIM**\n\n📊 ${user.bonusCount}/5\n🎉 Bepul: ${user.freeDiagnostics} ta\n${nextFree > 0 ? `📌 Keyingi BEPUL: ${nextFree} ta` : '🎉 BEPUL qozondingiz!'}\n\n🎯 Har 5 diagnostikada 1 ta BEPUL!`, { parse_mode: 'Markdown' });
+        }
+        else if (text === '📋 Diagnostika tarixim') {
+            const diags = getUserDiagnostics(userId, 10);
+            if (diags.length === 0) {
+                bot.sendMessage(chatId, '📭 **Sizda hali diagnostikalar mavjud emas!**', { parse_mode: 'Markdown' });
+                return;
             }
-            else if (text === '🎁 Mening bonuslarim') {
-                getUser(userId, (err, user) => {
-                    if (!user) { bot.sendMessage(chatId, '❌ Ro\'yxatdan o\'tmagan!'); return; }
-                    const nextFree = 5 - user.bonus_count;
-                    bot.sendMessage(chatId, `🎁 **MENGING BONUSLARIM**\n\n📊 ${user.bonus_count}/5\n🎉 Bepul: ${user.free_diagnostics} ta\n${nextFree > 0 ? `📌 Keyingi BEPUL: ${nextFree} ta` : '🎉 BEPUL qozondingiz!'}\n\n🎯 Har 5 diagnostikada 1 ta BEPUL!`, { parse_mode: 'Markdown' });
-                });
+            for (const d of diags) {
+                bot.sendMessage(chatId, `📅 ${new Date(d.date).toLocaleDateString()}\n📝 ${d.workDescription}\n💰 ${d.price > 0 ? d.price.toLocaleString() + ' so\'m' : 'BEPUL'}\n━━━━━━━━━━`, { parse_mode: 'Markdown' });
             }
-            else if (text === '📋 Diagnostika tarixim') {
-                getUserDiagnostics(userId, 10, (err, diags) => {
-                    if (!diags || diags.length === 0) {
-                        bot.sendMessage(chatId, '📭 **Sizda hali diagnostikalar mavjud emas!**', { parse_mode: 'Markdown' });
-                        return;
-                    }
-                    for (const d of diags.reverse()) {
-                        bot.sendMessage(chatId, `📅 ${new Date(d.diagnostic_date).toLocaleDateString()}\n📝 ${d.work_description}\n💰 ${d.price > 0 ? d.price.toLocaleString() + ' so\'m' : 'BEPUL'}\n━━━━━━━━━━`, { parse_mode: 'Markdown' });
-                    }
-                });
-            }
-            else if (text === 'ℹ️ Ma\'lumot') {
-                bot.sendMessage(chatId, `ℹ️ **ISUZU DOCTOR BOT**\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📞 Aloqa: ${ADMIN_PHONE}`, { parse_mode: 'Markdown' });
-            }
-            else if (text === '❌ Asosiy menyu') {
-                clearUserSession(userId);
-                sendMainMenu(chatId, false);
-            }
-            else if (!session.step) {
-                bot.sendMessage(chatId, '❌ **Tushunarsiz buyruq!** Menyudan foydalaning.', { parse_mode: 'Markdown' });
-            }
-            return;
         }
-        
-        // ADMIN MENYUSI
-        if (text === '📊 Statistika') {
-            getStatistics((err, stats) => {
-                bot.sendMessage(chatId, `📊 **STATISTIKA**\n\n👥 Foydalanuvchilar: ${stats.total_users}\n🔧 Jami: ${stats.total_diagnostics}\n💰 To'lovli: ${stats.paid_diagnostics}\n🎉 Bepul: ${stats.free_diagnostics}\n💵 Daromad: ${(stats.total_income || 0).toLocaleString()} so'm\n⚠️ Xatoliklar: ${stats.total_errors || 0}`, { parse_mode: 'Markdown' });
-            });
-        }
-        else if (text === '👥 Foydalanuvchilar') {
-            getAllUsers((err, users) => {
-                if (!users || users.length === 0) { bot.sendMessage(chatId, '📭 Hech qanday foydalanuvchi yo\'q'); return; }
-                let msg = '👥 **FOYDALANUVCHILAR**\n\n';
-                users.slice(0, 15).forEach(u => { msg += `🚗 ${u.car_number}\n📞 ${u.phone_number}\n🎁 ${u.bonus_count}/5\n━━━━━━\n`; });
-                bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
-            });
-        }
-        else if (text === '🔧 Diagnostika qo\'shish') {
-            session.step = 'admin_add_diagnostic';
-            bot.sendMessage(chatId, '🔧 **Diagnostika qo\'shish**\n\n🚗 Avtomobil raqamini kiriting:', { parse_mode: 'Markdown', reply_markup: { remove_keyboard: true } });
-        }
-        else if (text === '🎁 Bonusga yaqinlar') {
-            getNearBonusUsers((err, users) => {
-                if (!users || users.length === 0) { bot.sendMessage(chatId, '📭 Bonusga yaqin foydalanuvchilar yo\'q'); return; }
-                let msg = '🎁 **BONUSGA YAQINLAR**\n\n';
-                users.forEach(u => { msg += `🚗 ${u.car_number}\n📞 ${u.phone_number}\n🎁 ${u.bonus_count}/5 (${5 - u.bonus_count} ta qolgan)\n━━━━━━\n`; });
-                bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
-            });
-        }
-        else if (text === '⚠️ Xatoliklar') {
-            getErrors((err, errors) => {
-                if (!errors || errors.length === 0) { bot.sendMessage(chatId, '✅ Hech qanday xatolik yo\'q'); return; }
-                let msg = '⚠️ **XATOLIKLAR**\n\n';
-                errors.slice(0, 10).forEach(e => { msg += `🚗 ${e.car_number}\n🔴 ${e.error_code}\n📝 ${e.error_description}\n📅 ${new Date(e.error_date).toLocaleDateString()}\n━━━━━━\n`; });
-                bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
-            });
-        }
-        else if (text === '📋 Diagnostikalar tarixi') {
-            getAllDiagnostics(20, (err, diags) => {
-                if (!diags || diags.length === 0) { bot.sendMessage(chatId, '📭 Hech qanday diagnostika yo\'q'); return; }
-                for (const d of diags.slice(0, 10)) {
-                    bot.sendMessage(chatId, `📅 ${new Date(d.diagnostic_date).toLocaleDateString()}\n🚗 ${d.car_number}\n📝 ${d.work_description.substring(0, 50)}...\n💰 ${d.price > 0 ? d.price.toLocaleString() + ' so\'m' : 'BEPUL'}\n━━━━━━━━━━`, { parse_mode: 'Markdown' });
-                }
-            });
-        }
-        else if (text === '📅 Bugungi diagnostikalar') {
-            getTodayDiagnostics((err, diags) => {
-                if (!diags || diags.length === 0) { bot.sendMessage(chatId, '📭 Bugun hech qanday diagnostika yo\'q'); return; }
-                let msg = '📅 **BUGUNGI DIAGNOSTIKALAR**\n\n';
-                diags.forEach(d => { msg += `🚗 ${d.car_number}\n📝 ${d.work_description.substring(0, 40)}...\n💰 ${d.price > 0 ? d.price.toLocaleString() + ' so\'m' : 'BEPUL'}\n━━━━━━\n`; });
-                bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
-            });
-        }
-        else if (text === '💾 Backup yaratish') {
-            bot.sendMessage(chatId, '💾 **Backup yaratilmoqda...**', { parse_mode: 'Markdown' });
-            createBackup().then(backupFile => {
-                bot.sendMessage(chatId, `✅ **Backup yaratildi!**\n\n📁 ${path.basename(backupFile)}\n📅 ${new Date().toLocaleString()}`, { parse_mode: 'Markdown' });
-            }).catch(err => {
-                bot.sendMessage(chatId, '❌ **Backup yaratishda xatolik!**', { parse_mode: 'Markdown' });
-            });
-        }
-        else if (text === '🔄 Database tiklash') {
-            listBackups().then(backups => {
-                if (backups.length === 0) {
-                    bot.sendMessage(chatId, '❌ **Hech qanday backup topilmadi!**\n\n💾 Avval "💾 Backup yaratish" tugmasini bosing.', { parse_mode: 'Markdown' });
-                } else {
-                    bot.sendMessage(chatId, '🔄 **Database tiklash**\n\nQuyidagi backup\'lardan birini tanlang:', { parse_mode: 'Markdown', ...getBackupListKeyboard(backups) });
-                }
-            });
+        else if (text === 'ℹ️ Ma\'lumot') {
+            bot.sendMessage(chatId, `ℹ️ **ISUZU DOCTOR BOT**\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📞 Aloqa: ${ADMIN_PHONE}`, { parse_mode: 'Markdown' });
         }
         else if (text === '❌ Asosiy menyu') {
             clearUserSession(userId);
-            sendMainMenu(chatId, true);
+            sendMainMenu(chatId, false);
         }
         else if (!session.step) {
             bot.sendMessage(chatId, '❌ **Tushunarsiz buyruq!** Menyudan foydalaning.', { parse_mode: 'Markdown' });
         }
-    });
+        return;
+    }
+    
+    // ADMIN MENYUSI
+    if (text === '📊 Statistika') {
+        const stats = getStatistics();
+        bot.sendMessage(chatId, `📊 **STATISTIKA**\n\n👥 Foydalanuvchilar: ${stats.totalUsers}\n🔧 Jami: ${stats.totalDiagnostics}\n💰 To'lovli: ${stats.paidDiagnostics}\n🎉 Bepul: ${stats.freeDiagnostics}\n💵 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n⚠️ Xatoliklar: ${stats.totalErrors}`, { parse_mode: 'Markdown' });
+    }
+    else if (text === '👥 Foydalanuvchilar') {
+        const usersList = getAllUsers();
+        if (usersList.length === 0) { bot.sendMessage(chatId, '📭 Hech qanday foydalanuvchi yo\'q'); return; }
+        let msg = '👥 **FOYDALANUVCHILAR**\n\n';
+        usersList.slice(0, 15).forEach(u => { msg += `🚗 ${u.carNumber}\n📞 ${u.phone}\n🎁 ${u.bonusCount}/5\n━━━━━━\n`; });
+        bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
+    }
+    else if (text === '🔧 Diagnostika qo\'shish') {
+        session.step = 'admin_add_diagnostic';
+        bot.sendMessage(chatId, '🔧 **Diagnostika qo\'shish**\n\n🚗 Avtomobil raqamini kiriting:', { parse_mode: 'Markdown', reply_markup: { remove_keyboard: true } });
+    }
+    else if (text === '🎁 Bonusga yaqinlar') {
+        const usersList = getNearBonusUsers();
+        if (usersList.length === 0) { bot.sendMessage(chatId, '📭 Bonusga yaqin foydalanuvchilar yo\'q'); return; }
+        let msg = '🎁 **BONUSGA YAQINLAR**\n\n';
+        usersList.forEach(u => { msg += `🚗 ${u.carNumber}\n📞 ${u.phone}\n🎁 ${u.bonusCount}/5 (${5 - u.bonusCount} ta qolgan)\n━━━━━━\n`; });
+        bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
+    }
+    else if (text === '⚠️ Xatoliklar') {
+        const errorsList = getErrors();
+        if (errorsList.length === 0) { bot.sendMessage(chatId, '✅ Hech qanday xatolik yo\'q'); return; }
+        let msg = '⚠️ **XATOLIKLAR**\n\n';
+        errorsList.slice(0, 10).forEach(e => { msg += `🚗 ${e.carNumber}\n🔴 ${e.errorCode}\n📝 ${e.errorDescription}\n📅 ${new Date(e.date).toLocaleDateString()}\n━━━━━━\n`; });
+        bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
+    }
+    else if (text === '📋 Diagnostikalar tarixi') {
+        const diags = getAllDiagnostics(20);
+        if (diags.length === 0) { bot.sendMessage(chatId, '📭 Hech qanday diagnostika yo\'q'); return; }
+        for (const d of diags.slice(0, 10)) {
+            bot.sendMessage(chatId, `📅 ${new Date(d.date).toLocaleDateString()}\n🚗 ${d.carNumber}\n📝 ${d.workDescription.substring(0, 50)}...\n💰 ${d.price > 0 ? d.price.toLocaleString() + ' so\'m' : 'BEPUL'}\n━━━━━━━━━━`, { parse_mode: 'Markdown' });
+        }
+    }
+    else if (text === '📅 Bugungi diagnostikalar') {
+        const diags = getTodayDiagnostics();
+        if (diags.length === 0) { bot.sendMessage(chatId, '📭 Bugun hech qanday diagnostika yo\'q'); return; }
+        let msg = '📅 **BUGUNGI DIAGNOSTIKALAR**\n\n';
+        diags.forEach(d => { msg += `🚗 ${d.carNumber}\n📝 ${d.workDescription.substring(0, 40)}...\n💰 ${d.price > 0 ? d.price.toLocaleString() + ' so\'m' : 'BEPUL'}\n━━━━━━\n`; });
+        bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
+    }
+    else if (text === '💾 Backup yaratish') {
+        bot.sendMessage(chatId, '💾 **Backup yaratilmoqda...**', { parse_mode: 'Markdown' });
+        createBackup();
+        bot.sendMessage(chatId, `✅ **Backup yaratildi!**\n\n📅 ${new Date().toLocaleString()}`, { parse_mode: 'Markdown' });
+    }
+    else if (text === '🔄 Database tiklash') {
+        const backups = listBackups();
+        if (backups.length === 0) {
+            bot.sendMessage(chatId, '❌ **Hech qanday backup topilmadi!**\n\n💾 Avval "💾 Backup yaratish" tugmasini bosing.', { parse_mode: 'Markdown' });
+        } else {
+            bot.sendMessage(chatId, '🔄 **Database tiklash**\n\nQuyidagi backup\'lardan birini tanlang:', { parse_mode: 'Markdown', ...getBackupListKeyboard(backups) });
+        }
+    }
+    else if (text === '❌ Asosiy menyu') {
+        clearUserSession(userId);
+        sendMainMenu(chatId, true);
+    }
+    else if (!session.step) {
+        bot.sendMessage(chatId, '❌ **Tushunarsiz buyruq!** Menyudan foydalaning.', { parse_mode: 'Markdown' });
+    }
 });
 
 // -------------------- CALLBACK QUERY --------------------
@@ -633,11 +607,12 @@ bot.on('callback_query', (query) => {
         bot.answerCallbackQuery(query.id);
         bot.sendMessage(chatId, '🔄 **Database tiklanmoqda...**\n\n⚠️ Bu jarayon bir necha daqiqa vaqt olishi mumkin.', { parse_mode: 'Markdown' });
         
-        restoreBackup(backupName).then(() => {
+        if (restoreBackup(backupName)) {
+            loadData();
             bot.sendMessage(chatId, `✅ **Database muvaffaqiyatli tiklandi!**\n\n📁 ${backupName}\n📅 ${new Date().toLocaleString()}\n\n🔄 Barcha foydalanuvchilar ma'lumotlari tiklandi.`, { parse_mode: 'Markdown' });
-        }).catch(err => {
+        } else {
             bot.sendMessage(chatId, '❌ **Database tiklashda xatolik!**\n\nBackup fayli buzilgan bo\'lishi mumkin.', { parse_mode: 'Markdown' });
-        });
+        }
     } else if (data === 'restore_cancel') {
         bot.answerCallbackQuery(query.id);
         bot.sendMessage(chatId, '❌ **Database tiklash bekor qilindi.**', { parse_mode: 'Markdown' });
@@ -654,12 +629,14 @@ console.log('='.repeat(60));
 console.log('🚗 ISUZU DOCTOR BOT ISHGA TUSHMOQDA');
 console.log('='.repeat(60));
 
-initDatabase();
+loadData();
 
 console.log('='.repeat(60));
 console.log('🚗 ISUZU DOCTOR BOT ISHGA TUSHDI');
 console.log('='.repeat(60));
 console.log(`👑 Admin telefon: ${ADMIN_PHONE}`);
 console.log(`💰 Diagnostika narxi: ${DIAGNOSTIC_PRICE.toLocaleString()} so'm`);
+console.log(`👥 Foydalanuvchilar: ${users.filter(u => !u.isAdmin).length}`);
+console.log(`🔧 Diagnostikalar: ${diagnostics.length}`);
 console.log('='.repeat(60));
 console.log('✅ Bot ishlashga tayyor!');
