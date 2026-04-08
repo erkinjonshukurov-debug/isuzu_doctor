@@ -277,6 +277,17 @@ async def my_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(add_footer(create_outline("XATOLIK", "Malumot topilmadi! /start bosing", "❌")))
             conn.close()
             return
+        async def my_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    try:
+        c.execute("SELECT phone_number, car_number, registered_date, bonus_count, free_diagnostics, is_admin FROM users WHERE user_id = ?", (user_id,))
+        user = c.fetchone()
+        if not user:
+            await update.message.reply_text(add_footer(create_outline("XATOLIK", "Malumot topilmadi! /start bosing", "❌")))
+            conn.close()
+            return
         c.execute("SELECT COUNT(*) FROM diagnostics_history WHERE user_id = ?", (user_id,))
         diag_count = c.fetchone()[0]
         c.execute("SELECT COUNT(*) FROM error_history WHERE user_id = ?", (user_id,))
@@ -286,8 +297,11 @@ async def my_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
         phone, car_number, reg_date, bonus_count, free_diagnostics, is_admin_user = user
         
         info_dict = {
-            "🚗 Avtomobil": car_number, "📞 Telefon": phone, "📅 Ro'yxatdan o'tgan": reg_date,
-            "🎁 Diagnostika soni": f"{bonus_count}/5", "🎉 Bepul diagnostikalar": f"{free_diagnostics} ta",
+            "🚗 Avtomobil": car_number,
+            "📞 Telefon": phone,
+            "📅 Ro'yxatdan o'tgan": reg_date,
+            "🎁 Diagnostika soni": f"{bonus_count}/5",
+            "🎉 Bepul diagnostikalar": f"{free_diagnostics} ta",
             "📊 Jami diagnostikalar": f"{diag_count} ta"
         }
         if error_count > 0:
@@ -296,10 +310,14 @@ async def my_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
         result = create_outline("MENGING SAHIFAM", f"Xush kelibsiz {car_number}!", "📊")
         info = create_info_box("MA'LUMOTLAR", info_dict, "📋")
         message = f"{result}\n\n{info}"
+        
         if last_diag:
             work_done, diag_date, is_free = last_diag
             status_text = "BEPUL" if is_free else "To'lovli"
-            message += f"\n\n{create_outline('OXIRGI DIAGNOSTIKA', f'Sana: {diag_date}\nIshlar: {work_done[:50]}...\nHolat: {status_text}', '📝')}"
+            # TUZATILGAN QISM - backslash yo'q
+            diag_text = f"Sana: {diag_date}, Ishlar: {work_done[:50]}..., Holat: {status_text}"
+            message += f"\n\n{create_outline('OXIRGI DIAGNOSTIKA', diag_text, '📝')}"
+        
         keyboard = get_admin_keyboard() if is_admin_user else get_user_keyboard()
         await update.message.reply_text(add_footer(message), reply_markup=keyboard)
     except Exception as e:
@@ -307,16 +325,6 @@ async def my_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(add_footer(create_outline("XATOLIK", "Xatolik yuz berdi", "❌")))
     finally:
         conn.close()
-
-async def my_bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT bonus_count, free_diagnostics, is_admin FROM users WHERE user_id = ?", (user_id,))
-    user = c.fetchone()
-    conn.close()
-    if user:
-        bonus_count, free_diagnostics, is_admin_user = user
         next_free = 5 - bonus_count
         info_dict = {"📊 Joriy diagnostika soni": f"{bonus_count}/5", "🎉 Bepul diagnostikalar": f"{free_diagnostics} ta"}
         if next_free > 0 and next_free < 5:
