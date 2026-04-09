@@ -826,7 +826,7 @@ console.log(`🚗 Avtomobillar: ${users.reduce((sum, u) => sum + (u.cars ? u.car
 console.log(`🔧 Diagnostikalar: ${diagnostics.length}`);
 console.log('='.repeat(60));
 console.log('✅ Bot ishlashga tayyor!');
-// -------------------- DIAGNOSTIKA QO'SHISH (o'zgartirilgan qism) --------------------
+// -------------------- DIAGNOSTIKA QO'SHISH (to'g'rilangan versiya) --------------------
 if (session.step === 'admin_additional_notes') {
     session.data.additionalNotes = text === '❌ Bekor qilish' ? '' : text;
     
@@ -854,7 +854,7 @@ if (session.step === 'admin_additional_notes') {
     adminResponse += `\n${result.bonusMessage}`;
     bot.sendMessage(chatId, adminResponse, { parse_mode: 'Markdown' });
     
-    // FOYDALANUVCHI UCHUN HISOBOT (qo'shimcha eslatmalar bilan)
+    // FOYDALANUVCHI UCHUN HISOBOT (await ni olib tashladik)
     let userMsg = `🔧 **DIAGNOSTIKA NATIJALARI**\n\n`;
     userMsg += `🚗 **Avtomobil:** ${result.carNumber}\n`;
     userMsg += `📅 **Sana:** ${new Date().toLocaleString()}\n\n`;
@@ -873,7 +873,8 @@ if (session.step === 'admin_additional_notes') {
     userMsg += `━━━━━━━━━━━━━━━━━━\n`;
     userMsg += `🚗 Sifatli xizmat - xavfsizlik kafolati!`;
     
-    await bot.sendMessage(session.data.targetUser.userId, userMsg, { parse_mode: 'Markdown' }).catch(() => {});
+    // await ni olib tashladik, chunki bu yerda catch bilan ishlatilgan
+    bot.sendMessage(session.data.targetUser.userId, userMsg, { parse_mode: 'Markdown' }).catch(() => {});
     
     clearUserSession(userId);
     sendMainMenu(chatId, true);
