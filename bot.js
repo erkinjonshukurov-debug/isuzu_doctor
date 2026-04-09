@@ -825,4 +825,4 @@ console.log(`👥 Foydalanuvchilar: ${users.filter(u => !u.isAdmin).length}`);
 console.log(`🚗 Avtomobillar: ${users.reduce((sum, u) => sum + (u.cars ? u.cars.length : 0), 0)}`);
 console.log(`🔧 Diagnostikalar: ${diagnostics.length}`);
 console.log('='.repeat(60));
-console.log('✅ Bot ishlashga tayyor!`);
+console.log('✅ Bot ishlashga tayyor!');
