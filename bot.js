@@ -10,6 +10,17 @@ const ADMIN_IDS = [1437230485];
 const DIAGNOSTIC_PRICE = 250000;
 const MAX_CARS_PER_USER = 20;
 
+// -------------------- ESLATMA MATNI --------------------
+const REMINDER_MESSAGE = `
+🚗 **Hurmatli mijoz!**
+
+Agar avtomobilingiz doimo soz, ishonchli va yo‘llarda sizni yarim yo‘lda qoldirmasligini istasangiz — unda unga faqat professional va malakali mutaxassislar xizmat ko‘rsatishi muhim.
+
+🛠️ **Sifatli xizmat** — bu nafaqat qulaylik, balki sizning xavfsizligingiz kafolatidir.
+
+✅ Shuning uchun avtomobilingizni haqiqiy professionallarga ishonib topshiring!
+`;
+
 // -------------------- MA'LUMOTLAR YO'LLARI --------------------
 const USERS_FILE = path.join(__dirname, 'users.json');
 const DIAGNOSTICS_FILE = path.join(__dirname, 'diagnostics.json');
@@ -19,6 +30,11 @@ const BACKUP_DIR = path.join(__dirname, 'backups');
 // -------------------- BOT SOZLAMALARI --------------------
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 bot.deleteWebHook().catch(e => console.log('Webhook xatolik:', e.message));
+
+// -------------------- ESLATMA YUBORISH FUNKSIYASI --------------------
+async function sendReminder(chatId) {
+    await bot.sendMessage(chatId, REMINDER_MESSAGE, { parse_mode: 'Markdown' });
+}
 
 // -------------------- BACKUP FUNKSIYALARI --------------------
 function ensureBackupDir() {
@@ -375,6 +391,9 @@ function clearUserSession(userId) {
 }
 
 async function sendMainMenu(chatId, isAdminUser = false) {
+    // Har bir menyu oldidan eslatma yuborish
+    await sendReminder(chatId);
+    
     if (isAdminUser) {
         await bot.sendMessage(chatId, '👑 **Admin paneliga xush kelibsiz!**', {
             parse_mode: 'Markdown',
@@ -395,6 +414,9 @@ bot.onText(/\/start/, async (msg) => {
     
     clearUserSession(userId);
     const existingUser = getUserByUserId(userId);
+    
+    // Eslatma yuborish
+    await sendReminder(chatId);
     
     if (existingUser) {
         const carsCount = existingUser.cars.length;
@@ -448,6 +470,7 @@ bot.on('contact', async (msg) => {
         users.push(newUser);
         saveUsers();
         
+        await sendReminder(chatId);
         bot.sendMessage(chatId, `👑 **Siz ADMIN sifatida tizimga kirdingiz!**\n\n📞 Telefon: ${phoneNumber}`, { parse_mode: 'Markdown' });
         sendMainMenu(chatId, true);
         clearUserSession(userId);
@@ -503,6 +526,7 @@ bot.on('message', async (msg) => {
         
         addNewUser(userId, session.data.phone, carNumber);
         
+        await sendReminder(chatId);
         bot.sendMessage(chatId, `✅ **Siz muvaffaqiyatli ro'yxatdan o'tdingiz!**\n\n🚗 Avtomobil: ${carNumber}\n📞 Telefon: ${session.data.phone}\n\n🎁 **Bonus tizimi:** Har 5 diagnostikada 1 ta BEPUL!\n\n➕ "➕ Yangi avtomobil qo'shish" tugmasi orqali yana avtomobil qo'shishingiz mumkin.`, { parse_mode: 'Markdown' });
         sendMainMenu(chatId, false);
         clearUserSession(userId);
@@ -521,6 +545,7 @@ bot.on('message', async (msg) => {
         const result = addCarToUser(session.data.phone, carNumber);
         
         if (result.success) {
+            await sendReminder(chatId);
             bot.sendMessage(chatId, `✅ **Yangi avtomobil qo'shildi!**\n\n🚗 ${carNumber}\n📊 Jami avtomobillar: ${result.carsCount}/${MAX_CARS_PER_USER}\n\n🎁 Har bir avtomobil uchun bonus tizimi alohida hisoblanadi!`, { parse_mode: 'Markdown' });
         } else {
             bot.sendMessage(chatId, `❌ ${result.message}`, { parse_mode: 'Markdown' });
@@ -606,6 +631,7 @@ bot.on('message', async (msg) => {
         
         if (text === '📊 Mening sahifam') {
             const carsList = user.cars.map(c => `🚗 ${c.carNumber} (${c.totalDiagnostics} ta diagnostika)`).join('\n');
+            await sendReminder(chatId);
             bot.sendMessage(chatId, `📊 **MENGING SAHIFAM**\n\n📞 ${user.phone}\n🚗 Avtomobillar: ${user.cars.length}/${MAX_CARS_PER_USER}\n\n${carsList}\n\n🎁 Umumiy bonuslar: ${user.totalBonusCount || 0}\n🎉 Bepul diagnostika: ${user.totalFreeDiagnostics || 0} ta\n📊 Jami diagnostika: ${user.totalDiagnosticsAll || 0} ta`, { parse_mode: 'Markdown' });
         }
         else if (text === '🚗 Mening avtomobillarim') {
@@ -623,6 +649,7 @@ bot.on('message', async (msg) => {
                 carsText += `📅 Qo'shilgan: ${new Date(car.addedDate).toLocaleDateString()}\n`;
                 carsText += `━━━━━━━━━━━━━━━━━━\n`;
             }
+            await sendReminder(chatId);
             bot.sendMessage(chatId, carsText, { parse_mode: 'Markdown' });
         }
         else if (text === '➕ Yangi avtomobil qo\'shish') {
@@ -652,6 +679,7 @@ bot.on('message', async (msg) => {
                 bonusText += `━━━━━━━━━━━━━━━━━━\n`;
             }
             bonusText += `\n🎯 Har 5 diagnostikada 1 ta BEPUL!\n💡 Har bir avtomobil uchun bonus alohida hisoblanadi.`;
+            await sendReminder(chatId);
             bot.sendMessage(chatId, bonusText, { parse_mode: 'Markdown' });
         }
         else if (text === '📋 Diagnostika tarixim') {
@@ -661,11 +689,13 @@ bot.on('message', async (msg) => {
                 return;
             }
             
+            await sendReminder(chatId);
             for (const d of diags) {
                 bot.sendMessage(chatId, `📅 ${new Date(d.date).toLocaleDateString()}\n🚗 ${d.carNumber}\n📝 ${d.workDescription}\n💰 ${d.price > 0 ? d.price.toLocaleString() + ' so\'m' : 'BEPUL'}\n━━━━━━━━━━`, { parse_mode: 'Markdown' });
             }
         }
         else if (text === 'ℹ️ Ma\'lumot') {
+            await sendReminder(chatId);
             bot.sendMessage(chatId, `ℹ️ **ISUZU DOCTOR BOT**\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 Bitta telefon bilan ${MAX_CARS_PER_USER} tagacha avtomobil\n📞 Aloqa: ${ADMIN_PHONE}`, { parse_mode: 'Markdown' });
         }
         else if (text === '❌ Asosiy menyu') {
@@ -678,7 +708,7 @@ bot.on('message', async (msg) => {
         return;
     }
     
-    // ADMIN MENYUSI
+    // ADMIN MENYUSI (admin uchun eslatma kerak emas, lekin qo'shish mumkin)
     if (text === '📊 Statistika') {
         const stats = getStatistics();
         bot.sendMessage(chatId, `📊 **STATISTIKA**\n\n👥 Foydalanuvchilar: ${stats.totalUsers}\n🚗 Avtomobillar: ${stats.totalCars}\n🔧 Jami: ${stats.totalDiagnostics}\n💰 To'lovli: ${stats.paidDiagnostics}\n🎉 Bepul: ${stats.freeDiagnostics}\n💵 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n⚠️ Xatoliklar: ${stats.totalErrors}`, { parse_mode: 'Markdown' });
@@ -795,4 +825,4 @@ console.log(`👥 Foydalanuvchilar: ${users.filter(u => !u.isAdmin).length}`);
 console.log(`🚗 Avtomobillar: ${users.reduce((sum, u) => sum + (u.cars ? u.cars.length : 0), 0)}`);
 console.log(`🔧 Diagnostikalar: ${diagnostics.length}`);
 console.log('='.repeat(60));
-console.log('✅ Bot ishlashga tayyor!');
+console.log('✅ Bot ishlashga tayyor!`);
