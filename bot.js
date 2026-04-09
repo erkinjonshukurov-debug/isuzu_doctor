@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 const TelegramBot = require('node-telegram-bot-api');
 const path = require('path');
 const fs = require('fs');
@@ -9,7 +8,7 @@ const BOT_TOKEN = process.env.BOT_TOKEN || '8779251766:AAH12INusgBCawsk5awqIjcyH
 const ADMIN_PHONE = "+998979247888";
 const ADMIN_IDS = [1437230485];
 const DIAGNOSTIC_PRICE = 250000;
-const MAX_CARS_PER_USER = 20; // Maksimum avtomobil soni
+const MAX_CARS_PER_USER = 20;
 
 // -------------------- MA'LUMOTLAR YO'LLARI --------------------
 const USERS_FILE = path.join(__dirname, 'users.json');
@@ -80,7 +79,7 @@ function restoreBackup(backupName) {
     return true;
 }
 
-// -------------------- DATABASE FUNKSIYALARI (JSON) --------------------
+// -------------------- DATABASE FUNKSIYALARI --------------------
 let users = [];
 let diagnostics = [];
 let errors = [];
@@ -129,25 +128,20 @@ function saveErrors() {
     fs.writeFileSync(ERRORS_FILE, JSON.stringify(errors, null, 2));
 }
 
-// Foydalanuvchini telefon raqami bo'yicha topish
 function getUserByPhone(phone) {
     return users.find(u => u.phone === phone);
 }
 
-// Foydalanuvchining barcha avtomobillarini olish
-function getUserCars(phone) {
-    const user = getUserByPhone(phone);
-    return user ? user.cars : [];
+function getUserByUserId(userId) {
+    return users.find(u => u.userId === userId);
 }
 
-// Foydalanuvchining avtomobilini raqam bo'yicha topish
-function getUserCarByNumber(phone, carNumber) {
-    const user = getUserByPhone(phone);
-    if (!user) return null;
-    return user.cars.find(c => c.carNumber === carNumber);
+function isAdmin(userId) {
+    if (ADMIN_IDS.includes(userId)) return true;
+    const user = getUserByUserId(userId);
+    return user ? user.isAdmin === true : false;
 }
 
-// Yangi foydalanuvchi yaratish (birinchi avtomobil bilan)
 function addNewUser(userId, phoneNumber, carNumber) {
     const newUser = {
         userId: userId,
@@ -173,7 +167,6 @@ function addNewUser(userId, phoneNumber, carNumber) {
     return newUser;
 }
 
-// Mavjud foydalanuvchiga yangi avtomobil qo'shish
 function addCarToUser(phoneNumber, carNumber) {
     const user = getUserByPhone(phoneNumber);
     if (!user) return { success: false, message: 'Foydalanuvchi topilmadi' };
@@ -201,24 +194,6 @@ function addCarToUser(phoneNumber, carNumber) {
     return { success: true, message: 'Yangi avtomobil qo\'shildi!', carsCount: user.cars.length };
 }
 
-// Avtomobilni o'chirish
-function removeCarFromUser(phoneNumber, carNumber) {
-    const user = getUserByPhone(phoneNumber);
-    if (!user) return { success: false, message: 'Foydalanuvchi topilmadi' };
-    
-    const carIndex = user.cars.findIndex(c => c.carNumber === carNumber);
-    if (carIndex === -1) return { success: false, message: 'Avtomobil topilmadi' };
-    
-    if (user.cars.length === 1) {
-        return { success: false, message: "Sizda faqat bitta avtomobil qolgan. Avtomobilni o'chira olmaysiz!" };
-    }
-    
-    user.cars.splice(carIndex, 1);
-    saveUsers();
-    return { success: true, message: 'Avtomobil o\'chirildi!' };
-}
-
-// Avtomobil uchun diagnostika qo'shish
 function addDiagnosticToCar(phoneNumber, carNumber, workDescription, additionalNotes) {
     const user = getUserByPhone(phoneNumber);
     if (!user) return { success: false, message: 'Foydalanuvchi topilmadi' };
@@ -245,7 +220,6 @@ function addDiagnosticToCar(phoneNumber, carNumber, workDescription, additionalN
         }
     }
     
-    // Diagnostikani saqlash
     const diagnostic = {
         id: Date.now(),
         userId: user.userId,
@@ -260,12 +234,10 @@ function addDiagnosticToCar(phoneNumber, carNumber, workDescription, additionalN
     diagnostics.push(diagnostic);
     saveDiagnostics();
     
-    // Avtomobilni yangilash
     car.bonusCount = newBonusCount;
     car.freeDiagnostics = newFreeDiagnostics;
     car.totalDiagnostics++;
     
-    // Umumiy statistikani yangilash
     user.totalDiagnosticsAll++;
     if (isFree) {
         user.totalFreeDiagnostics = (user.totalFreeDiagnostics || 0) + 1;
@@ -286,17 +258,10 @@ function addDiagnosticToCar(phoneNumber, carNumber, workDescription, additionalN
     };
 }
 
-// Foydalanuvchining barcha diagnostikalarini olish
 function getUserDiagnostics(phoneNumber, limit = 10) {
     return diagnostics.filter(d => d.phoneNumber === phoneNumber).slice(-limit).reverse();
 }
 
-// Avtomobil bo'yicha diagnostikalarni olish
-function getCarDiagnostics(phoneNumber, carNumber, limit = 10) {
-    return diagnostics.filter(d => d.phoneNumber === phoneNumber && d.carNumber === carNumber).slice(-limit).reverse();
-}
-
-// Bonusga yaqin avtomobillarni olish
 function getNearBonusCars() {
     const nearBonus = [];
     for (const user of users) {
@@ -341,24 +306,8 @@ function getStatistics() {
         paidDiagnostics: paidDiagnostics.length,
         freeDiagnostics: diagnostics.filter(d => d.isFree).length,
         totalIncome: totalIncome,
-        totalErrors: errors.length,
-        pendingErrors: errors.filter(e => e.status === 'pending').length
+        totalErrors: errors.length
     };
-}
-
-function addError(userId, carNumber, errorCode, errorDescription) {
-    const error = {
-        id: Date.now(),
-        userId: userId,
-        carNumber: carNumber,
-        date: new Date().toISOString(),
-        errorCode: errorCode,
-        errorDescription: errorDescription,
-        status: 'pending'
-    };
-    errors.push(error);
-    saveErrors();
-    return error;
 }
 
 function getErrors() {
@@ -405,19 +354,13 @@ function getPhoneKeyboard() {
     };
 }
 
-function getCarSelectionKeyboard(cars) {
-    const keyboard = cars.map(car => [{ text: `🚗 ${car.carNumber}`, callback_data: `select_car_${car.carNumber}` }]);
-    keyboard.push([{ text: '❌ Bekor qilish', callback_data: 'select_cancel' }]);
-    return { reply_markup: { inline_keyboard: keyboard } };
-}
-
 function getBackupListKeyboard(backups) {
     const keyboard = backups.slice(0, 10).map(b => [{ text: `📁 ${b.name} (${b.date.toLocaleDateString()})`, callback_data: `restore_${b.name}` }]);
     keyboard.push([{ text: '❌ Bekor qilish', callback_data: 'restore_cancel' }]);
     return { reply_markup: { inline_keyboard: keyboard } };
 }
 
-// -------------------- GLOBAL O'ZGARUVCHILAR --------------------
+// -------------------- SESSIONS --------------------
 const userSessions = new Map();
 
 function getUserSession(userId) {
@@ -431,7 +374,6 @@ function clearUserSession(userId) {
     userSessions.delete(userId);
 }
 
-// -------------------- ASOSIY MENYU --------------------
 async function sendMainMenu(chatId, isAdminUser = false) {
     if (isAdminUser) {
         await bot.sendMessage(chatId, '👑 **Admin paneliga xush kelibsiz!**', {
@@ -452,10 +394,7 @@ bot.onText(/\/start/, async (msg) => {
     const userId = msg.from.id;
     
     clearUserSession(userId);
-    const user = getUserByPhone(userId.toString()); // Bu to'g'ri emas, telefon orqali qidirish kerak
-    
-    // Foydalanuvchini userId bo'yicha topish
-    const existingUser = users.find(u => u.userId === userId);
+    const existingUser = getUserByUserId(userId);
     
     if (existingUser) {
         const carsCount = existingUser.cars.length;
@@ -515,18 +454,15 @@ bot.on('contact', async (msg) => {
         return;
     }
     
-    // Telefon raqam bo'yicha foydalanuvchini tekshirish
     const existingUser = getUserByPhone(phoneNumber);
     
     if (existingUser && existingUser.userId !== userId) {
-        // Telefon raqam boshqa foydalanuvchiga tegishli
-        bot.sendMessage(chatId, '❌ **Bu telefon raqam allaqachon ro\'yxatdan o\'tgan!**\n\nIltimos, boshqa telefon raqamidan foydalaning yoki admin bilan bog\'laning.', { parse_mode: 'Markdown' });
+        bot.sendMessage(chatId, '❌ **Bu telefon raqam allaqachon ro\'yxatdan o\'tgan!**', { parse_mode: 'Markdown' });
         clearUserSession(userId);
         return;
     }
     
     if (existingUser && existingUser.userId === userId) {
-        // Mavjud foydalanuvchi - avtomobil qo'shish rejimi
         session.step = 'add_new_car';
         session.data.isExistingUser = true;
         bot.sendMessage(chatId, `✅ Telefon raqam tasdiqlandi: ${phoneNumber}\n\n🚗 **Yangi avtomobil raqamini kiriting:**\n\nMasalan: 01A777AA\n\n⚠️ Siz maksimum ${MAX_CARS_PER_USER} tagacha avtomobil qo'sha olasiz.`, {
@@ -534,7 +470,6 @@ bot.on('contact', async (msg) => {
             reply_markup: { remove_keyboard: true }
         });
     } else {
-        // Yangi foydalanuvchi
         session.step = 'first_car_number';
         session.data.isExistingUser = false;
         bot.sendMessage(chatId, `✅ Telefon raqam qabul qilindi: ${phoneNumber}\n\n🚗 **Birinchi avtomobil raqamini kiriting:**\n\nMasalan: 01A777AA`, {
@@ -544,7 +479,7 @@ bot.on('contact', async (msg) => {
     }
 });
 
-// -------------------- AVTOMOBIL RAQAM QABUL QILISH --------------------
+// -------------------- XABARLARNI QAYTA ISHLASH --------------------
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -557,7 +492,7 @@ bot.on('message', async (msg) => {
     
     const session = getUserSession(userId);
     
-    // Birinchi avtomobil raqami (yangi foydalanuvchi)
+    // Birinchi avtomobil raqami
     if (session.step === 'first_car_number') {
         const carNumber = text.toUpperCase().trim();
         
@@ -574,7 +509,7 @@ bot.on('message', async (msg) => {
         return;
     }
     
-    // Yangi avtomobil qo'shish (mavjud foydalanuvchi)
+    // Yangi avtomobil qo'shish
     if (session.step === 'add_new_car') {
         const carNumber = text.toUpperCase().trim();
         
@@ -596,27 +531,10 @@ bot.on('message', async (msg) => {
         return;
     }
     
-    // Admin diagnostika qo'shish - Avtomobil tanlash
-    if (session.step === 'admin_select_car') {
-        const user = getUserByPhone(session.data.targetPhone);
-        if (user) {
-            // Avtomobillarni inline keyboardda ko'rsatish
-            const carsKeyboard = user.cars.map(car => ([{ text: `🚗 ${car.carNumber}`, callback_data: `diag_car_${car.carNumber}` }]));
-            carsKeyboard.push([{ text: '❌ Bekor qilish', callback_data: 'diag_cancel' }]);
-            
-            await bot.sendMessage(chatId, `🔧 **Avtomobil tanlang:**\n\n👤 ${user.phone}\n🚗 ${user.cars.length} ta avtomobil`, {
-                parse_mode: 'Markdown',
-                reply_markup: { inline_keyboard: carsKeyboard }
-            });
-        }
-        return;
-    }
-    
-    // Admin diagnostika qo'shish - Avtomobil raqami (eski usul)
+    // Admin diagnostika qo'shish
     if (session.step === 'admin_add_diagnostic') {
         const carNumber = text.toUpperCase().trim();
         
-        // Avtomobil raqami bo'yicha foydalanuvchini topish
         let foundUser = null;
         let foundCar = null;
         
@@ -679,7 +597,7 @@ bot.on('message', async (msg) => {
     
     // FOYDALANUVCHI MENYUSI
     if (!isAdmin(userId)) {
-        const user = users.find(u => u.userId === userId);
+        const user = getUserByUserId(userId);
         
         if (!user && text !== '❌ Asosiy menyu') {
             bot.sendMessage(chatId, '❌ Ro\'yxatdan o\'tmagan! /start bosing.');
@@ -713,10 +631,10 @@ bot.on('message', async (msg) => {
                 return;
             }
             
-            const session = getUserSession(userId);
-            session.step = 'add_new_car';
-            session.data.phone = user.phone;
-            session.data.isExistingUser = true;
+            const newSession = getUserSession(userId);
+            newSession.step = 'add_new_car';
+            newSession.data.phone = user.phone;
+            newSession.data.isExistingUser = true;
             
             bot.sendMessage(chatId, `🚗 **Yangi avtomobil raqamini kiriting:**\n\nMasalan: 01A777AA\n\n⚠️ Siz maksimum ${MAX_CARS_PER_USER} tagacha avtomobil qo'sha olasiz.\n📊 Hozirgi avtomobillar soni: ${user.cars.length}/${MAX_CARS_PER_USER}`, {
                 parse_mode: 'Markdown',
@@ -874,7 +792,7 @@ console.log('='.repeat(60));
 console.log(`👑 Admin telefon: ${ADMIN_PHONE}`);
 console.log(`💰 Diagnostika narxi: ${DIAGNOSTIC_PRICE.toLocaleString()} so'm`);
 console.log(`👥 Foydalanuvchilar: ${users.filter(u => !u.isAdmin).length}`);
-console.log(`🚗 Avtomobillar: ${users.reduce((sum, u) => sum + u.cars.length, 0)}`);
+console.log(`🚗 Avtomobillar: ${users.reduce((sum, u) => sum + (u.cars ? u.cars.length : 0), 0)}`);
 console.log(`🔧 Diagnostikalar: ${diagnostics.length}`);
 console.log('='.repeat(60));
 console.log('✅ Bot ishlashga tayyor!');
