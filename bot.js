@@ -826,3 +826,82 @@ console.log(`🚗 Avtomobillar: ${users.reduce((sum, u) => sum + (u.cars ? u.car
 console.log(`🔧 Diagnostikalar: ${diagnostics.length}`);
 console.log('='.repeat(60));
 console.log('✅ Bot ishlashga tayyor!');
+// -------------------- DIAGNOSTIKA QO'SHISH (o'zgartirilgan qism) --------------------
+if (session.step === 'admin_additional_notes') {
+    session.data.additionalNotes = text === '❌ Bekor qilish' ? '' : text;
+    
+    const result = addDiagnosticToCar(
+        session.data.targetUser.phone,
+        session.data.targetCar.carNumber,
+        session.data.workDescription,
+        session.data.additionalNotes
+    );
+    
+    if (!result.success) {
+        bot.sendMessage(chatId, '❌ **Xatolik yuz berdi!**', { parse_mode: 'Markdown' });
+        clearUserSession(userId);
+        sendMainMenu(chatId, true);
+        return;
+    }
+    
+    // Admin uchun hisobot (qo'shimcha eslatmalar bilan)
+    let adminResponse = `🔧 **DIAGNOSTIKA QO'SHILDI**\n\n🚗 ${result.carNumber}\n📞 ${session.data.targetUser.phone}\n💰 Narx: ${result.price.toLocaleString()} so'm\n\n📝 **Bajarilgan ishlar:**\n${session.data.workDescription}\n`;
+    
+    if (session.data.additionalNotes && session.data.additionalNotes !== '') {
+        adminResponse += `\n➕ **Qo'shimcha eslatmalar:**\n${session.data.additionalNotes}\n`;
+    }
+    
+    adminResponse += `\n${result.bonusMessage}`;
+    bot.sendMessage(chatId, adminResponse, { parse_mode: 'Markdown' });
+    
+    // FOYDALANUVCHI UCHUN HISOBOT (qo'shimcha eslatmalar bilan)
+    let userMsg = `🔧 **DIAGNOSTIKA NATIJALARI**\n\n`;
+    userMsg += `🚗 **Avtomobil:** ${result.carNumber}\n`;
+    userMsg += `📅 **Sana:** ${new Date().toLocaleString()}\n\n`;
+    userMsg += `📝 **Bajarilgan ishlar:**\n${session.data.workDescription}\n\n`;
+    
+    // Qo'shimcha eslatmalar bo'lsa, foydalanuvchiga ham ko'rsatish
+    if (session.data.additionalNotes && session.data.additionalNotes !== '') {
+        userMsg += `➕ **Qo'shimcha eslatmalar:**\n${session.data.additionalNotes}\n\n`;
+    }
+    
+    userMsg += `💰 **Narx:** ${result.price.toLocaleString()} so'm\n\n`;
+    userMsg += `${result.bonusMessage}\n\n`;
+    userMsg += `📊 **Joriy holat:**\n`;
+    userMsg += `🎁 Bonus: ${result.newBonusCount}/5\n`;
+    userMsg += `🎉 Bepul diagnostika: ${result.newFreeDiagnostics} ta\n`;
+    userMsg += `━━━━━━━━━━━━━━━━━━\n`;
+    userMsg += `🚗 Sifatli xizmat - xavfsizlik kafolati!`;
+    
+    await bot.sendMessage(session.data.targetUser.userId, userMsg, { parse_mode: 'Markdown' }).catch(() => {});
+    
+    clearUserSession(userId);
+    sendMainMenu(chatId, true);
+    return;
+}
+// -------------------- DIAGNOSTIKA TARIXIM (foydalanuvchi uchun) --------------------
+else if (text === '📋 Diagnostika tarixim') {
+    const diags = getUserDiagnostics(user.phone, 15);
+    if (diags.length === 0) {
+        bot.sendMessage(chatId, '📭 **Sizda hali diagnostikalar mavjud emas!**', { parse_mode: 'Markdown' });
+        return;
+    }
+    
+    await sendReminder(chatId);
+    for (const d of diags) {
+        let diagText = `📅 **${new Date(d.date).toLocaleDateString()}**\n`;
+        diagText += `🕐 ${new Date(d.date).toLocaleTimeString()}\n`;
+        diagText += `🚗 ${d.carNumber}\n\n`;
+        diagText += `📝 **Bajarilgan ishlar:**\n${d.workDescription}\n\n`;
+        
+        // Qo'shimcha eslatmalarni ko'rsatish
+        if (d.additionalNotes && d.additionalNotes !== '') {
+            diagText += `➕ **Qo'shimcha eslatmalar:**\n${d.additionalNotes}\n\n`;
+        }
+        
+        diagText += `💰 **Narx:** ${d.price > 0 ? d.price.toLocaleString() + ' so\'m' : 'BEPUL'}\n`;
+        diagText += `━━━━━━━━━━━━━━━━━━\n`;
+        
+        bot.sendMessage(chatId, diagText, { parse_mode: 'Markdown' });
+    }
+}
