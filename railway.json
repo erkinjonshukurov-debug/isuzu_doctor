@@ -3,15 +3,6 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "npm start",
-    "restartPolicyType": "ON_FAILURE"
-  }
-}
-{
-  "build": {
-    "builder": "NIXPACKS"
-  },
-  "deploy": {
     "startCommand": "python Isuzu_doctor_bot.py"
   }
 }
