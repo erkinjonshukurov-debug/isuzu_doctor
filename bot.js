@@ -334,8 +334,7 @@ function getErrors() {
     return errors.slice(-50).reverse();
 }
 
-// -------------------- KEYBOARDS (Android va iPhone uchun optimallashtirilgan) --------------------
-// Admin keyboard - har bir qatorda 2 ta tugma
+// -------------------- KEYBOARDS --------------------
 function getAdminKeyboard() {
     return {
         reply_markup: {
@@ -353,7 +352,6 @@ function getAdminKeyboard() {
     };
 }
 
-// User keyboard - har bir qatorda 2 ta tugma (Android va iPhone uchun)
 function getUserKeyboard() {
     return {
         reply_markup: {
@@ -371,7 +369,6 @@ function getUserKeyboard() {
     };
 }
 
-// Telefon raqam so'rash keyboard - oddiy va ishonchli
 function getPhoneKeyboard() {
     return {
         reply_markup: {
@@ -385,7 +382,6 @@ function getPhoneKeyboard() {
     };
 }
 
-// Backup tiklash keyboard - inline keyboard (hamma qurilmalarda ishlaydi)
 function getBackupListKeyboard(backups) {
     const keyboard = backups.slice(0, 10).map(b => [{ text: `📁 ${b.name} (${b.date.toLocaleDateString()})`, callback_data: `restore_${b.name}` }]);
     keyboard.push([{ text: '❌ Bekor qilish', callback_data: 'restore_cancel' }]);
@@ -406,7 +402,6 @@ function clearUserSession(userId) {
     userSessions.delete(userId);
 }
 
-// Keyboardni tozalash (hamma qurilmalar uchun)
 async function clearKeyboard(chatId) {
     try {
         await bot.sendMessage(chatId, '⏳', {
@@ -417,7 +412,6 @@ async function clearKeyboard(chatId) {
     }
 }
 
-// Asosiy menyu yuborish (Android va iPhone uchun optimallashtirilgan)
 async function sendMainMenu(chatId, isAdminUser = false) {
     try {
         await sendReminder(chatId);
@@ -435,7 +429,6 @@ async function sendMainMenu(chatId, isAdminUser = false) {
         }
     } catch (error) {
         console.error('Menu yuborishda xatolik:', error);
-        // Agar keyboard bilan xatolik bo'lsa, keyboardsiz yuborish
         if (isAdminUser) {
             await bot.sendMessage(chatId, '👑 Admin paneliga xush kelibsiz!\n\n/statistika - Statistika\n/users - Foydalanuvchilar\n/add_diagnostic - Diagnostika qo\'shish\n/close - Asosiy menyu');
         } else {
@@ -546,8 +539,7 @@ bot.on('contact', async (msg) => {
     }
 });
 
-// -------------------- MATNLI BUYRUQLAR (Android va iPhone uchun) --------------------
-// Text komandalarni ham qo'shamiz
+// -------------------- MATNLI BUYRUQLAR --------------------
 bot.onText(/\/profile/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -578,13 +570,21 @@ bot.onText(/\/my_cars/, async (msg) => {
         return;
     }
     
-    let carsText = '🚗 *MENGING AVTOMOBILLARIM*\n\n';
+    let carsText = '🚗 *MENGING AVTOMOBILLARIM*\n\n📌 *Bonus qoidasi:* 5 diagnostika = 1 BEPUL\n━━━━━━━━━━━━━━━━━━\n\n';
     for (const car of user.cars) {
-        carsText += `🚗 ${car.carNumber}\n`;
+        const nextFree = 5 - car.bonusCount;
+        carsText += `🚗 *${car.carNumber}*\n`;
         carsText += `🎁 Bonus: ${car.bonusCount}/5\n`;
         carsText += `🎉 Bepul: ${car.freeDiagnostics} ta\n`;
         carsText += `📊 Diagnostika: ${car.totalDiagnostics} ta\n`;
         carsText += `📅 Qo'shilgan: ${new Date(car.addedDate).toLocaleDateString()}\n`;
+        
+        if (car.freeDiagnostics > 0) {
+            carsText += `✅ *Bepul diagnostika mavjud!*\n`;
+        } else if (nextFree > 0) {
+            carsText += `📌 Keyingi BEPUL: ${nextFree} ta diagnostikadan keyin\n`;
+        }
+        
         carsText += `━━━━━━━━━━━━━━━━━━\n`;
     }
     await sendReminder(chatId);
@@ -601,16 +601,32 @@ bot.onText(/\/my_bonus/, async (msg) => {
         return;
     }
     
-    let bonusText = '🎁 *MENGING BONUSLARIM*\n\n';
+    let bonusText = '🎁 *MENGING BONUSLARIM*\n\n📌 *Qoida:* Har 5 diagnostikada 1 ta BEPUL!\n━━━━━━━━━━━━━━━━━━\n\n';
     for (const car of user.cars) {
         const nextFree = 5 - car.bonusCount;
-        bonusText += `🚗 ${car.carNumber}\n`;
-        bonusText += `📊 ${car.bonusCount}/5\n`;
-        bonusText += `🎉 Bepul: ${car.freeDiagnostics} ta\n`;
-        bonusText += `${nextFree > 0 ? `📌 Keyingi BEPUL: ${nextFree} ta` : '🎉 BEPUL qozondingiz!'}\n`;
+        bonusText += `🚗 *${car.carNumber}*\n`;
+        bonusText += `📊 To\'plangan: ${car.bonusCount}/5\n`;
+        bonusText += `🎉 Bepul diagnostika: ${car.freeDiagnostics} ta\n`;
+        
+        if (car.freeDiagnostics > 0) {
+            bonusText += `✅ *Sizda ${car.freeDiagnostics} ta BEPUL diagnostika bor!*\n`;
+            bonusText += `💡 Keyingi diagnostikangiz BEPUL bo'ladi!\n`;
+        } else if (nextFree > 0) {
+            bonusText += `📌 *Keyingi BEPUL diagnostika:* ${nextFree} ta diagnostikadan keyin\n`;
+            bonusText += `   (${nextFree} ta to'lovli diagnostika qilsangiz, 1 ta BEPUL olasiz)\n`;
+        } else if (nextFree === 0 && car.bonusCount === 5) {
+            bonusText += `🎉 *DARHOL BEPUL diagnostika qozondingiz!*\n`;
+            bonusText += `✅ Keyingi diagnostikangiz BEPUL bo'ladi!\n`;
+        }
+        
         bonusText += `━━━━━━━━━━━━━━━━━━\n`;
     }
-    bonusText += `\n🎯 Har 5 diagnostikada 1 ta BEPUL!\n💡 Har bir avtomobil uchun bonus alohida hisoblanadi.`;
+    bonusText += `\n🎯 *QANDAY ISHLAYDI?*\n`;
+    bonusText += `• Har 5 ta to'lovli diagnostika = 1 ta BEPUL\n`;
+    bonusText += `• Har bir avtomobil uchun bonus alohida hisoblanadi\n`;
+    bonusText += `• Bepul diagnostika cheksiz muddatga amal qiladi\n`;
+    bonusText += `• Admin diagnostika qo'shganda avtomatik hisoblanadi`;
+    
     await sendReminder(chatId);
     await bot.sendMessage(chatId, bonusText, { parse_mode: 'Markdown' });
 });
@@ -705,7 +721,7 @@ bot.on('message', async (msg) => {
     if (msg.contact) return;
     if (!text) return;
     if (text === '/start') return;
-    if (text.startsWith('/')) return; // / bilan boshlangan komandalarni o'tkazib yuborish
+    if (text.startsWith('/')) return;
     
     const session = getUserSession(userId);
     
@@ -818,7 +834,18 @@ bot.on('message', async (msg) => {
             adminResponse += `\n➕ *Qo'shimcha eslatmalar:*\n${session.data.additionalNotes}\n`;
         }
         
-        adminResponse += `\n${result.bonusMessage}`;
+        adminResponse += `\n${result.bonusMessage}\n\n`;
+        adminResponse += `📊 *Yangi holat:*\n`;
+        adminResponse += `🎁 Bonus: ${result.newBonusCount}/5\n`;
+        adminResponse += `🎉 Bepul: ${result.newFreeDiagnostics} ta\n`;
+        
+        const remainingForNext = 5 - result.newBonusCount;
+        if (result.newFreeDiagnostics > 0) {
+            adminResponse += `✅ Foydalanuvchida ${result.newFreeDiagnostics} ta BEPUL diagnostika bor!\n`;
+        } else if (remainingForNext > 0) {
+            adminResponse += `📌 Keyingi BEPUL: ${remainingForNext} ta diagnostikadan keyin\n`;
+        }
+        
         await bot.sendMessage(chatId, adminResponse, { parse_mode: 'Markdown' });
         
         // Foydalanuvchi uchun hisobot
@@ -834,10 +861,22 @@ bot.on('message', async (msg) => {
         userMsg += `💰 *Narx:* ${result.price.toLocaleString()} so'm\n\n`;
         userMsg += `${result.bonusMessage}\n\n`;
         userMsg += `📊 *Joriy holat:*\n`;
-        userMsg += `🎁 Bonus: ${result.newBonusCount}/5\n`;
+        userMsg += `🎁 To'plangan bonus: ${result.newBonusCount}/5\n`;
         userMsg += `🎉 Bepul diagnostika: ${result.newFreeDiagnostics} ta\n`;
+        
+        const remainingForNextFree = 5 - result.newBonusCount;
+        if (result.newFreeDiagnostics > 0) {
+            userMsg += `✅ *Sizda ${result.newFreeDiagnostics} ta BEPUL diagnostika bor!*\n`;
+            userMsg += `💡 Keyingi diagnostikangiz BEPUL bo'lishi mumkin!\n`;
+        } else if (remainingForNextFree > 0 && remainingForNextFree < 5) {
+            userMsg += `📌 *Keyingi BEPUL:* ${remainingForNextFree} ta diagnostikadan keyin\n`;
+        } else if (remainingForNextFree === 0 && result.newBonusCount === 5) {
+            userMsg += `🎉 *Siz 5-diagnostikani tugatdingiz!* Keyingisi BEPUL!\n`;
+        }
+        
         userMsg += `━━━━━━━━━━━━━━━━━━\n`;
-        userMsg += `🚗 Sifatli xizmat - xavfsizlik kafolati!`;
+        userMsg += `🚗 Sifatli xizmat - xavfsizlik kafolati!\n`;
+        userMsg += `📌 Eslatma: Har 5 diagnostikada 1 ta BEPUL!`;
         
         bot.sendMessage(session.data.targetUser.userId, userMsg, { parse_mode: 'Markdown' }).catch(() => {});
         
@@ -854,7 +893,7 @@ bot.on('message', async (msg) => {
         return;
     }
     
-    if (text === '📊 Mening sahifam' || text === '📊 Mening sahifam') {
+    if (text === '📊 Mening sahifam') {
         const carsList = user.cars.map(c => `🚗 ${c.carNumber} (${c.totalDiagnostics} ta diagnostika)`).join('\n');
         await sendReminder(chatId);
         await bot.sendMessage(chatId, `📊 *MENGING SAHIFAM*\n\n📞 ${user.phone}\n🚗 Avtomobillar: ${user.cars.length}/${MAX_CARS_PER_USER}\n\n${carsList}\n\n🎁 Umumiy bonuslar: ${user.totalBonusCount || 0}\n🎉 Bepul diagnostika: ${user.totalFreeDiagnostics || 0} ta\n📊 Jami diagnostika: ${user.totalDiagnosticsAll || 0} ta`, { parse_mode: 'Markdown' });
@@ -865,13 +904,21 @@ bot.on('message', async (msg) => {
             return;
         }
         
-        let carsText = '🚗 *MENGING AVTOMOBILLARIM*\n\n';
+        let carsText = '🚗 *MENGING AVTOMOBILLARIM*\n\n📌 *Bonus qoidasi:* 5 diagnostika = 1 BEPUL\n━━━━━━━━━━━━━━━━━━\n\n';
         for (const car of user.cars) {
-            carsText += `🚗 ${car.carNumber}\n`;
+            const nextFree = 5 - car.bonusCount;
+            carsText += `🚗 *${car.carNumber}*\n`;
             carsText += `🎁 Bonus: ${car.bonusCount}/5\n`;
             carsText += `🎉 Bepul: ${car.freeDiagnostics} ta\n`;
             carsText += `📊 Diagnostika: ${car.totalDiagnostics} ta\n`;
             carsText += `📅 Qo'shilgan: ${new Date(car.addedDate).toLocaleDateString()}\n`;
+            
+            if (car.freeDiagnostics > 0) {
+                carsText += `✅ *Bepul diagnostika mavjud!*\n`;
+            } else if (nextFree > 0) {
+                carsText += `📌 Keyingi BEPUL: ${nextFree} ta diagnostikadan keyin\n`;
+            }
+            
             carsText += `━━━━━━━━━━━━━━━━━━\n`;
         }
         await sendReminder(chatId);
@@ -894,16 +941,32 @@ bot.on('message', async (msg) => {
         });
     }
     else if (text === '🎁 Mening bonuslarim') {
-        let bonusText = '🎁 *MENGING BONUSLARIM*\n\n';
+        let bonusText = '🎁 *MENGING BONUSLARIM*\n\n📌 *Qoida:* Har 5 diagnostikada 1 ta BEPUL!\n━━━━━━━━━━━━━━━━━━\n\n';
         for (const car of user.cars) {
             const nextFree = 5 - car.bonusCount;
-            bonusText += `🚗 ${car.carNumber}\n`;
-            bonusText += `📊 ${car.bonusCount}/5\n`;
-            bonusText += `🎉 Bepul: ${car.freeDiagnostics} ta\n`;
-            bonusText += `${nextFree > 0 ? `📌 Keyingi BEPUL: ${nextFree} ta` : '🎉 BEPUL qozondingiz!'}\n`;
+            bonusText += `🚗 *${car.carNumber}*\n`;
+            bonusText += `📊 To\'plangan: ${car.bonusCount}/5\n`;
+            bonusText += `🎉 Bepul diagnostika: ${car.freeDiagnostics} ta\n`;
+            
+            if (car.freeDiagnostics > 0) {
+                bonusText += `✅ *Sizda ${car.freeDiagnostics} ta BEPUL diagnostika bor!*\n`;
+                bonusText += `💡 Keyingi diagnostikangiz BEPUL bo'ladi!\n`;
+            } else if (nextFree > 0) {
+                bonusText += `📌 *Keyingi BEPUL diagnostika:* ${nextFree} ta diagnostikadan keyin\n`;
+                bonusText += `   (${nextFree} ta to'lovli diagnostika qilsangiz, 1 ta BEPUL olasiz)\n`;
+            } else if (nextFree === 0 && car.bonusCount === 5) {
+                bonusText += `🎉 *DARHOL BEPUL diagnostika qozondingiz!*\n`;
+                bonusText += `✅ Keyingi diagnostikangiz BEPUL bo'ladi!\n`;
+            }
+            
             bonusText += `━━━━━━━━━━━━━━━━━━\n`;
         }
-        bonusText += `\n🎯 Har 5 diagnostikada 1 ta BEPUL!\n💡 Har bir avtomobil uchun bonus alohida hisoblanadi.`;
+        bonusText += `\n🎯 *QANDAY ISHLAYDI?*\n`;
+        bonusText += `• Har 5 ta to'lovli diagnostika = 1 ta BEPUL\n`;
+        bonusText += `• Har bir avtomobil uchun bonus alohida hisoblanadi\n`;
+        bonusText += `• Bepul diagnostika cheksiz muddatga amal qiladi\n`;
+        bonusText += `• Admin diagnostika qo'shganda avtomatik hisoblanadi`;
+        
         await sendReminder(chatId);
         await bot.sendMessage(chatId, bonusText, { parse_mode: 'Markdown' });
     }
@@ -971,10 +1034,17 @@ bot.on('message', async (msg) => {
     }
     else if (text === '🎁 Bonusga yaqinlar') {
         const nearBonus = getNearBonusCars();
-        if (nearBonus.length === 0) { await bot.sendMessage(chatId, '📭 Bonusga yaqin avtomobillar yo\'q'); return; }
-        let msg = '🎁 *BONUSGA YAQIN AVTOMOBILLAR*\n\n';
+        if (nearBonus.length === 0) { 
+            await bot.sendMessage(chatId, '📭 Bonusga yaqin avtomobillar yo\'q\n\n📌 Bepul diagnostika 5 ta diagnostikadan keyin beriladi.', { parse_mode: 'Markdown' }); 
+            return; 
+        }
+        let msg = '🎁 *BONUSGA YAQIN AVTOMOBILLAR*\n\n📌 *Qoida:* Har 5 diagnostikada 1 ta BEPUL!\n━━━━━━━━━━━━━━━━━━\n\n';
         nearBonus.forEach(c => { 
-            msg += `🚗 ${c.carNumber}\n📞 ${c.phone}\n🎁 ${c.bonusCount}/5 (${c.remaining} ta qolgan)\n━━━━━━\n`; 
+            msg += `🚗 ${c.carNumber}\n`;
+            msg += `📞 ${c.phone}\n`;
+            msg += `🎁 ${c.bonusCount}/5 diagnostika\n`;
+            msg += `📌 Keyingi BEPUL: ${c.remaining} ta diagnostikadan keyin\n`;
+            msg += `━━━━━━━━━━━━━━━━━━\n`;
         });
         await bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
     }
