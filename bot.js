@@ -375,9 +375,9 @@ function getPhoneKeyboard() {
             keyboard: [
                 [{ text: '📱 Telefon raqamini yuborish', request_contact: true }]
             ],
-            resize_keyboard: true,
+            resize_keyboard: false,    
             one_time_keyboard: true,
-            selective: true
+            selective: false
         }
     };
 }
@@ -429,6 +429,7 @@ async function sendMainMenu(chatId, isAdminUser = false) {
         }
     } catch (error) {
         console.error('Menu yuborishda xatolik:', error);
+        // Fallback: keyboardsiz yuborish
         if (isAdminUser) {
             await bot.sendMessage(chatId, '👑 Admin paneliga xush kelibsiz!\n\n/statistika - Statistika\n/users - Foydalanuvchilar\n/add_diagnostic - Diagnostika qo\'shish\n/close - Asosiy menyu');
         } else {
