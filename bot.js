@@ -1,7 +1,6 @@
 const TelegramBot = require('node-telegram-bot-api');
 const path = require('path');
 const fs = require('fs');
-const Database = require('better-sqlite3');
 
 // -------------------- TOKEN VA ADMIN --------------------
 const BOT_TOKEN = process.env.BOT_TOKEN || '8779251766:AAH12INusgBCawsk5awqIjcyHnNLiq5A33A';
@@ -23,9 +22,14 @@ Agar avtomobilingiz doimo soz, ishonchli va yo‘llarda sizni yarim yo‘lda qol
 `;
 
 // -------------------- RAILWAY VOLUME YO'LLARI --------------------
+// Railway Volume mount path - bu muhim!
 const VOLUME_PATH = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, 'data');
 const BACKUP_DIR = path.join(VOLUME_PATH, 'backups');
-const DB_PATH = path.join(VOLUME_PATH, 'bot_data.db');
+
+// Ma'lumotlar fayllari volume ichida saqlanadi
+const USERS_FILE = path.join(VOLUME_PATH, 'users.json');
+const DIAGNOSTICS_FILE = path.join(VOLUME_PATH, 'diagnostics.json');
+const ERRORS_FILE = path.join(VOLUME_PATH, 'errors.json');
 
 // Volume papkasini yaratish
 function ensureVolumeDir() {
@@ -41,65 +45,6 @@ function ensureVolumeDir() {
 
 // Volume ni tekshirish
 ensureVolumeDir();
-
-// -------------------- SQLITE DATABASE --------------------
-let db = new Database(DB_PATH);
-
-// Jadvallarni yaratish
-function initDatabase() {
-    db.exec(`
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            phone TEXT UNIQUE,
-            first_name TEXT,
-            last_name TEXT,
-            username TEXT,
-            full_name TEXT,
-            is_admin INTEGER DEFAULT 0,
-            is_active INTEGER DEFAULT 1,
-            registered_date TEXT,
-            total_bonus_count INTEGER DEFAULT 0,
-            total_free_diagnostics INTEGER DEFAULT 0,
-            total_diagnostics_all INTEGER DEFAULT 0
-        );
-
-        CREATE TABLE IF NOT EXISTS cars (
-            car_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            car_number TEXT,
-            bonus_count INTEGER DEFAULT 0,
-            free_diagnostics INTEGER DEFAULT 0,
-            total_diagnostics INTEGER DEFAULT 0,
-            added_date TEXT,
-            is_active INTEGER DEFAULT 1,
-            FOREIGN KEY (user_id) REFERENCES users(user_id)
-        );
-
-        CREATE TABLE IF NOT EXISTS diagnostics (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            phone_number TEXT,
-            car_number TEXT,
-            date TEXT,
-            work_description TEXT,
-            additional_notes TEXT,
-            price INTEGER,
-            is_free INTEGER DEFAULT 0,
-            FOREIGN KEY (user_id) REFERENCES users(user_id)
-        );
-
-        CREATE TABLE IF NOT EXISTS errors (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            car_number TEXT,
-            error_code TEXT,
-            error_description TEXT,
-            date TEXT
-        );
-    `);
-    console.log('✅ SQLite database jadvallari yaratildi');
-}
-
-initDatabase();
 
 // -------------------- BOT SOZLAMALARI --------------------
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
@@ -118,32 +63,31 @@ async function sendReminder(chatId) {
 function createBackup() {
     ensureVolumeDir();
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-    const backupFilePath = path.join(BACKUP_DIR, `backup_${timestamp}.sqlite`);
     
-    try {
-        db.close();
-        fs.copyFileSync(DB_PATH, backupFilePath);
-        db = new Database(DB_PATH);
-        initDatabase();
-        console.log(`✅ Backup yaratildi: ${backupFilePath}`);
-        
-        const backups = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.sqlite'));
-        while (backups.length > 30) {
-            const oldest = backups.sort()[0];
-            fs.unlinkSync(path.join(BACKUP_DIR, oldest));
-            backups.shift();
-        }
-        return true;
-    } catch (err) {
-        console.error('Backup yaratishda xatolik:', err);
-        return false;
+    if (fs.existsSync(USERS_FILE)) {
+        fs.copyFileSync(USERS_FILE, path.join(BACKUP_DIR, `users_backup_${timestamp}.json`));
     }
+    if (fs.existsSync(DIAGNOSTICS_FILE)) {
+        fs.copyFileSync(DIAGNOSTICS_FILE, path.join(BACKUP_DIR, `diagnostics_backup_${timestamp}.json`));
+    }
+    if (fs.existsSync(ERRORS_FILE)) {
+        fs.copyFileSync(ERRORS_FILE, path.join(BACKUP_DIR, `errors_backup_${timestamp}.json`));
+    }
+    
+    const backups = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.json'));
+    while (backups.length > 30) {
+        const oldest = backups.sort()[0];
+        fs.unlinkSync(path.join(BACKUP_DIR, oldest));
+        backups.shift();
+    }
+    console.log(`✅ Backup yaratildi: ${timestamp}`);
+    return true;
 }
 
 function listBackups() {
     ensureVolumeDir();
     const backups = fs.readdirSync(BACKUP_DIR)
-        .filter(f => f.startsWith('backup_') && f.endsWith('.sqlite'))
+        .filter(f => f.startsWith('users_backup_') && f.endsWith('.json'))
         .map(f => ({
             name: f,
             date: fs.statSync(path.join(BACKUP_DIR, f)).mtime
@@ -156,104 +100,164 @@ function restoreBackup(backupName) {
     const backupPath = path.join(BACKUP_DIR, backupName);
     if (!fs.existsSync(backupPath)) return false;
     
-    try {
-        db.close();
-        fs.copyFileSync(backupPath, DB_PATH);
-        db = new Database(DB_PATH);
-        initDatabase();
-        console.log(`✅ Database tiklandi: ${backupName}`);
-        return true;
-    } catch (err) {
-        console.error('Database tiklashda xatolik:', err);
-        return false;
+    const backupData = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
+    fs.writeFileSync(USERS_FILE, JSON.stringify(backupData, null, 2));
+    
+    const diagBackupName = backupName.replace('users_backup_', 'diagnostics_backup_');
+    const diagBackupPath = path.join(BACKUP_DIR, diagBackupName);
+    if (fs.existsSync(diagBackupPath)) {
+        const diagData = JSON.parse(fs.readFileSync(diagBackupPath, 'utf8'));
+        fs.writeFileSync(DIAGNOSTICS_FILE, JSON.stringify(diagData, null, 2));
     }
+    
+    console.log(`✅ Database tiklandi: ${backupName}`);
+    return true;
 }
 
 // -------------------- DATABASE FUNKSIYALARI --------------------
+let users = [];
+let diagnostics = [];
+let errors = [];
+
+function loadData() {
+    try {
+        ensureVolumeDir();
+        
+        if (fs.existsSync(USERS_FILE)) {
+            users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+        } else {
+            users = [];
+            saveUsers();
+        }
+        
+        if (fs.existsSync(DIAGNOSTICS_FILE)) {
+            diagnostics = JSON.parse(fs.readFileSync(DIAGNOSTICS_FILE, 'utf8'));
+        } else {
+            diagnostics = [];
+            saveDiagnostics();
+        }
+        
+        if (fs.existsSync(ERRORS_FILE)) {
+            errors = JSON.parse(fs.readFileSync(ERRORS_FILE, 'utf8'));
+        } else {
+            errors = [];
+            saveErrors();
+        }
+        
+        console.log(`✅ Yuklandi: ${users.length} foydalanuvchi, ${diagnostics.length} diagnostika`);
+        console.log(`✅ Volume manzili: ${VOLUME_PATH}`);
+        console.log(`✅ Ma'lumotlar fayllari volume da saqlanmoqda`);
+    } catch (err) {
+        console.error('Ma\'lumot yuklashda xatolik:', err);
+        users = [];
+        diagnostics = [];
+        errors = [];
+    }
+}
+
+function saveUsers() {
+    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+}
+
+function saveDiagnostics() {
+    fs.writeFileSync(DIAGNOSTICS_FILE, JSON.stringify(diagnostics, null, 2));
+}
+
+function saveErrors() {
+    fs.writeFileSync(ERRORS_FILE, JSON.stringify(errors, null, 2));
+}
 
 function getUserByPhone(phone) {
-    const stmt = db.prepare('SELECT * FROM users WHERE phone = ?');
-    return stmt.get(phone);
+    return users.find(u => u.phone === phone);
 }
 
 function getUserByUserId(userId) {
-    const stmt = db.prepare('SELECT * FROM users WHERE user_id = ?');
-    return stmt.get(userId);
-}
-
-function getUserCars(userId) {
-    const stmt = db.prepare('SELECT * FROM cars WHERE user_id = ? AND is_active = 1');
-    return stmt.all(userId);
+    return users.find(u => u.userId === userId);
 }
 
 function isAdmin(userId) {
     if (ADMIN_IDS.includes(userId)) return true;
     const user = getUserByUserId(userId);
-    return user ? user.is_admin === 1 : false;
+    return user ? user.isAdmin === true : false;
 }
 
 function addNewUser(userId, phoneNumber, carNumber, firstName, lastName, username) {
-    const fullName = `${firstName || ''} ${lastName || ''}`.trim();
-    const registeredDate = new Date().toISOString();
-    
-    const insertUser = db.prepare(`
-        INSERT INTO users (user_id, phone, first_name, last_name, username, full_name, registered_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-    insertUser.run(userId, phoneNumber, firstName, lastName, username, fullName, registeredDate);
-    
-    const insertCar = db.prepare(`
-        INSERT INTO cars (user_id, car_number, added_date)
-        VALUES (?, ?, ?)
-    `);
-    insertCar.run(userId, carNumber, registeredDate);
-    
-    return { userId, phone: phoneNumber, fullName };
+    const newUser = {
+        userId: userId,
+        phone: phoneNumber,
+        firstName: firstName || '',
+        lastName: lastName || '',
+        username: username || '',
+        fullName: `${firstName || ''} ${lastName || ''}`.trim(),
+        isAdmin: false,
+        isActive: true,
+        registeredDate: new Date().toISOString(),
+        cars: [{
+            carId: Date.now(),
+            carNumber: carNumber,
+            bonusCount: 0,
+            freeDiagnostics: 0,
+            totalDiagnostics: 0,
+            addedDate: new Date().toISOString(),
+            isActive: true
+        }],
+        totalBonusCount: 0,
+        totalFreeDiagnostics: 0,
+        totalDiagnosticsAll: 0
+    };
+    users.push(newUser);
+    saveUsers();
+    return newUser;
 }
 
 function addCarToUser(phoneNumber, carNumber, userInfo = {}) {
     const user = getUserByPhone(phoneNumber);
     if (!user) return { success: false, message: 'Foydalanuvchi topilmadi' };
     
-    const existingCar = db.prepare('SELECT * FROM cars WHERE user_id = ? AND car_number = ?').get(user.user_id, carNumber);
+    if (user.cars.length >= MAX_CARS_PER_USER) {
+        return { success: false, message: `Siz maksimum ${MAX_CARS_PER_USER} ta avtomobil qo'sha olasiz!` };
+    }
+    
+    const existingCar = user.cars.find(c => c.carNumber === carNumber);
     if (existingCar) {
         return { success: false, message: 'Bu avtomobil raqami allaqachon qo\'shilgan!' };
     }
     
-    const carsCount = db.prepare('SELECT COUNT(*) as count FROM cars WHERE user_id = ?').get(user.user_id).count;
-    if (carsCount >= MAX_CARS_PER_USER) {
-        return { success: false, message: `Siz maksimum ${MAX_CARS_PER_USER} ta avtomobil qo'sha olasiz!` };
+    if (userInfo.firstName && !user.firstName) {
+        user.firstName = userInfo.firstName;
+        user.lastName = userInfo.lastName || '';
+        user.username = userInfo.username || '';
+        user.fullName = `${userInfo.firstName || ''} ${userInfo.lastName || ''}`.trim();
+        saveUsers();
     }
     
-    const insertCar = db.prepare(`
-        INSERT INTO cars (user_id, car_number, added_date)
-        VALUES (?, ?, ?)
-    `);
-    insertCar.run(user.user_id, carNumber, new Date().toISOString());
+    user.cars.push({
+        carId: Date.now(),
+        carNumber: carNumber,
+        bonusCount: 0,
+        freeDiagnostics: 0,
+        totalDiagnostics: 0,
+        addedDate: new Date().toISOString(),
+        isActive: true
+    });
     
-    if (userInfo.firstName && !user.first_name) {
-        db.prepare('UPDATE users SET first_name = ?, last_name = ?, username = ?, full_name = ? WHERE user_id = ?')
-            .run(userInfo.firstName, userInfo.lastName || '', userInfo.username || '', `${userInfo.firstName} ${userInfo.lastName || ''}`.trim(), user.user_id);
-    }
-    
-    const newCount = db.prepare('SELECT COUNT(*) as count FROM cars WHERE user_id = ?').get(user.user_id).count;
-    
-    return { success: true, message: 'Yangi avtomobil qo\'shildi!', carsCount: newCount };
+    saveUsers();
+    return { success: true, message: 'Yangi avtomobil qo\'shildi!', carsCount: user.cars.length };
 }
 
 function addDiagnosticToCar(phoneNumber, carNumber, workDescription, additionalNotes) {
     const user = getUserByPhone(phoneNumber);
     if (!user) return { success: false, message: 'Foydalanuvchi topilmadi' };
     
-    const car = db.prepare('SELECT * FROM cars WHERE user_id = ? AND car_number = ?').get(user.user_id, carNumber);
+    const car = user.cars.find(c => c.carNumber === carNumber);
     if (!car) return { success: false, message: 'Avtomobil topilmadi' };
     
     let isFree = false;
     let bonusMessage = '';
-    let newBonusCount = car.bonus_count;
-    let newFreeDiagnostics = car.free_diagnostics;
+    let newBonusCount = car.bonusCount;
+    let newFreeDiagnostics = car.freeDiagnostics;
     
-    if (car.free_diagnostics > 0) {
+    if (car.freeDiagnostics > 0) {
         isFree = true;
         newFreeDiagnostics--;
         bonusMessage = '🎉 BEPUL diagnostikadan foydalandingiz!';
@@ -267,24 +271,32 @@ function addDiagnosticToCar(phoneNumber, carNumber, workDescription, additionalN
         }
     }
     
-    const insertDiagnostic = db.prepare(`
-        INSERT INTO diagnostics (user_id, phone_number, car_number, date, work_description, additional_notes, price, is_free)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    insertDiagnostic.run(user.user_id, phoneNumber, carNumber, new Date().toISOString(), workDescription, additionalNotes || '', isFree ? 0 : DIAGNOSTIC_PRICE, isFree ? 1 : 0);
+    const diagnostic = {
+        id: Date.now(),
+        userId: user.userId,
+        phoneNumber: phoneNumber,
+        carNumber: carNumber,
+        date: new Date().toISOString(),
+        workDescription: workDescription,
+        additionalNotes: additionalNotes || '',
+        price: isFree ? 0 : DIAGNOSTIC_PRICE,
+        isFree: isFree
+    };
+    diagnostics.push(diagnostic);
+    saveDiagnostics();
     
-    const updateCar = db.prepare(`
-        UPDATE cars 
-        SET bonus_count = ?, free_diagnostics = ?, total_diagnostics = total_diagnostics + 1
-        WHERE user_id = ? AND car_number = ?
-    `);
-    updateCar.run(newBonusCount, newFreeDiagnostics, user.user_id, carNumber);
+    car.bonusCount = newBonusCount;
+    car.freeDiagnostics = newFreeDiagnostics;
+    car.totalDiagnostics++;
     
+    user.totalDiagnosticsAll++;
     if (isFree) {
-        db.prepare('UPDATE users SET total_free_diagnostics = total_free_diagnostics + 1, total_diagnostics_all = total_diagnostics_all + 1 WHERE user_id = ?').run(user.user_id);
+        user.totalFreeDiagnostics = (user.totalFreeDiagnostics || 0) + 1;
     } else {
-        db.prepare('UPDATE users SET total_bonus_count = total_bonus_count + 1, total_diagnostics_all = total_diagnostics_all + 1 WHERE user_id = ?').run(user.user_id);
+        user.totalBonusCount = (user.totalBonusCount || 0) + 1;
     }
+    
+    saveUsers();
     
     return {
         success: true,
@@ -298,118 +310,74 @@ function addDiagnosticToCar(phoneNumber, carNumber, workDescription, additionalN
 }
 
 function getUserDiagnostics(phoneNumber, limit = 10) {
-    const stmt = db.prepare(`
-        SELECT * FROM diagnostics WHERE phone_number = ? 
-        ORDER BY date DESC LIMIT ?
-    `);
-    return stmt.all(phoneNumber, limit);
+    return diagnostics.filter(d => d.phoneNumber === phoneNumber).slice(-limit).reverse();
 }
 
 function getNearBonusCars() {
-    const cars = db.prepare(`
-        SELECT u.phone, u.full_name, c.car_number, c.bonus_count
-        FROM cars c
-        JOIN users u ON c.user_id = u.user_id
-        WHERE u.is_admin = 0 AND c.bonus_count >= 3 AND c.bonus_count < 5
-    `).all();
-    
-    return cars.map(c => ({
-        phone: c.phone,
-        carNumber: c.car_number,
-        bonusCount: c.bonus_count,
-        remaining: 5 - c.bonus_count,
-        fullName: c.full_name || 'Ism kiritilmagan'
-    }));
+    const nearBonus = [];
+    for (const user of users) {
+        if (user.isAdmin) continue;
+        for (const car of user.cars) {
+            if (car.bonusCount >= 3 && car.bonusCount < 5) {
+                nearBonus.push({
+                    phone: user.phone,
+                    carNumber: car.carNumber,
+                    bonusCount: car.bonusCount,
+                    remaining: 5 - car.bonusCount,
+                    fullName: user.fullName || 'Ism kiritilmagan'
+                });
+            }
+        }
+    }
+    return nearBonus;
 }
 
 function getTodayDiagnostics() {
     const today = new Date().toISOString().split('T')[0];
-    const stmt = db.prepare(`
-        SELECT * FROM diagnostics WHERE date LIKE ?
-        ORDER BY date DESC
-    `);
-    return stmt.all(`${today}%`);
+    return diagnostics.filter(d => d.date.split('T')[0] === today);
 }
 
 function getAllDiagnostics(limit = 50) {
-    const stmt = db.prepare(`
-        SELECT * FROM diagnostics ORDER BY date DESC LIMIT ?
-    `);
-    return stmt.all(limit);
+    return diagnostics.slice(-limit).reverse();
 }
 
 function getStatistics() {
-    const totalUsers = db.prepare('SELECT COUNT(*) as count FROM users WHERE is_admin = 0').get().count;
-    const totalCars = db.prepare('SELECT COUNT(*) as count FROM cars').get().count;
-    const totalDiagnostics = db.prepare('SELECT COUNT(*) as count FROM diagnostics').get().count;
-    const paidDiagnostics = db.prepare('SELECT COUNT(*) as count FROM diagnostics WHERE is_free = 0').get().count;
-    const freeDiagnostics = db.prepare('SELECT COUNT(*) as count FROM diagnostics WHERE is_free = 1').get().count;
-    const totalIncome = db.prepare('SELECT SUM(price) as total FROM diagnostics WHERE is_free = 0').get().total || 0;
-    const totalErrors = db.prepare('SELECT COUNT(*) as count FROM errors').get().count;
+    const regularUsers = users.filter(u => !u.isAdmin);
+    let totalCars = 0;
+    for (const user of regularUsers) {
+        totalCars += user.cars.length;
+    }
+    
+    const paidDiagnostics = diagnostics.filter(d => !d.isFree);
+    const totalIncome = paidDiagnostics.reduce((sum, d) => sum + d.price, 0);
     
     return {
-        totalUsers,
-        totalCars,
-        totalDiagnostics,
-        paidDiagnostics,
-        freeDiagnostics,
-        totalIncome,
-        totalErrors
+        totalUsers: regularUsers.length,
+        totalCars: totalCars,
+        totalDiagnostics: diagnostics.length,
+        paidDiagnostics: paidDiagnostics.length,
+        freeDiagnostics: diagnostics.filter(d => d.isFree).length,
+        totalIncome: totalIncome,
+        totalErrors: errors.length
     };
 }
 
 function getErrors() {
-    const stmt = db.prepare('SELECT * FROM errors ORDER BY date DESC LIMIT 50');
-    return stmt.all();
-}
-
-function addError(carNumber, errorCode, errorDescription) {
-    const stmt = db.prepare(`
-        INSERT INTO errors (car_number, error_code, error_description, date)
-        VALUES (?, ?, ?, ?)
-    `);
-    stmt.run(carNumber, errorCode, errorDescription, new Date().toISOString());
+    return errors.slice(-50).reverse();
 }
 
 function getAllUsersWithDetails() {
-    const users = db.prepare(`
-        SELECT u.*, 
-               (SELECT COUNT(*) FROM cars WHERE user_id = u.user_id) as cars_count
-        FROM users u 
-        WHERE u.is_admin = 0
-        ORDER BY u.registered_date DESC
-    `).all();
-    
-    return users.map(u => {
-        const cars = db.prepare('SELECT * FROM cars WHERE user_id = ?').all(u.user_id);
-        return {
-            userId: u.user_id,
-            fullName: u.full_name || 'Ism kiritilmagan',
-            firstName: u.first_name || '',
-            lastName: u.last_name || '',
-            username: u.username || '',
-            phone: u.phone,
-            cars: cars,
-            totalDiagnostics: u.total_diagnostics_all || 0,
-            registeredDate: u.registered_date
-        };
-    });
-}
-
-function loadData() {
-    try {
-        ensureVolumeDir();
-        initDatabase();
-        
-        const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
-        const diagCount = db.prepare('SELECT COUNT(*) as count FROM diagnostics').get().count;
-        
-        console.log(`✅ Yuklandi: ${userCount} foydalanuvchi, ${diagCount} diagnostika`);
-        console.log(`✅ Database manzili: ${DB_PATH}`);
-        console.log(`✅ Volume manzili: ${VOLUME_PATH}`);
-    } catch (err) {
-        console.error('Ma\'lumot yuklashda xatolik:', err);
-    }
+    return users.filter(u => !u.isAdmin).map(u => ({
+        userId: u.userId,
+        fullName: u.fullName || 'Ism kiritilmagan',
+        firstName: u.firstName || '',
+        lastName: u.lastName || '',
+        username: u.username || '',
+        phone: u.phone,
+        cars: u.cars,
+        totalDiagnostics: u.totalDiagnosticsAll || 0,
+        registeredDate: u.registeredDate
+    }));
 }
 
 // -------------------- KEYBOARDS --------------------
@@ -530,16 +498,18 @@ bot.onText(/\/start/, async (msg) => {
         await sendReminder(chatId);
         
         if (existingUser) {
-            if (!existingUser.first_name && firstName) {
-                db.prepare('UPDATE users SET first_name = ?, last_name = ?, username = ?, full_name = ? WHERE user_id = ?')
-                    .run(firstName, lastName, username, `${firstName} ${lastName}`.trim(), userId);
+            if (!existingUser.firstName && firstName) {
+                existingUser.firstName = firstName;
+                existingUser.lastName = lastName;
+                existingUser.username = username;
+                existingUser.fullName = `${firstName} ${lastName}`.trim();
+                saveUsers();
             }
             
-            const cars = getUserCars(userId);
-            const carsCount = cars.length;
-            const welcomeText = `👋 *Xush kelibsiz, ${existingUser.full_name || firstName || 'hurmatli mijoz'}!*\n\n📞 Telefon: ${existingUser.phone}\n🚗 Avtomobillar: ${carsCount} ta\n🎁 Umumiy bonus: ${existingUser.total_bonus_count || 0}\n🎉 Bepul: ${existingUser.total_free_diagnostics || 0} ta\n📊 Jami diagnostika: ${existingUser.total_diagnostics_all || 0} ta`;
+            const carsCount = existingUser.cars.length;
+            const welcomeText = `👋 *Xush kelibsiz, ${existingUser.fullName || firstName || 'hurmatli mijoz'}!*\n\n📞 Telefon: ${existingUser.phone}\n🚗 Avtomobillar: ${carsCount} ta\n🎁 Umumiy bonus: ${existingUser.totalBonusCount || 0}\n🎉 Bepul: ${existingUser.totalFreeDiagnostics || 0} ta\n📊 Jami diagnostika: ${existingUser.totalDiagnosticsAll || 0} ta`;
             await bot.sendMessage(chatId, welcomeText, { parse_mode: 'Markdown' });
-            await sendMainMenu(chatId, existingUser.is_admin === 1);
+            await sendMainMenu(chatId, existingUser.isAdmin);
         } else {
             const session = getUserSession(userId);
             session.data.firstName = firstName;
@@ -582,18 +552,31 @@ bot.on('contact', async (msg) => {
     }
     
     if (phoneNumber === ADMIN_PHONE) {
-        const fullName = `${firstName} ${lastName}`.trim();
-        const insertUser = db.prepare(`
-            INSERT INTO users (user_id, phone, first_name, last_name, username, full_name, is_admin, registered_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-        insertUser.run(userId, phoneNumber, firstName, lastName, username, fullName, 1, new Date().toISOString());
-        
-        const insertCar = db.prepare(`
-            INSERT INTO cars (user_id, car_number, added_date)
-            VALUES (?, ?, ?)
-        `);
-        insertCar.run(userId, "ADMIN", new Date().toISOString());
+        const newUser = {
+            userId: userId,
+            phone: phoneNumber,
+            firstName: firstName,
+            lastName: lastName,
+            username: username,
+            fullName: `${firstName} ${lastName}`.trim(),
+            isAdmin: true,
+            isActive: true,
+            registeredDate: new Date().toISOString(),
+            cars: [{
+                carId: Date.now(),
+                carNumber: "ADMIN",
+                bonusCount: 0,
+                freeDiagnostics: 0,
+                totalDiagnostics: 0,
+                addedDate: new Date().toISOString(),
+                isActive: true
+            }],
+            totalBonusCount: 0,
+            totalFreeDiagnostics: 0,
+            totalDiagnosticsAll: 0
+        };
+        users.push(newUser);
+        saveUsers();
         
         try {
             await sendReminder(chatId);
@@ -608,13 +591,13 @@ bot.on('contact', async (msg) => {
     
     const existingUser = getUserByPhone(phoneNumber);
     
-    if (existingUser && existingUser.user_id !== userId) {
+    if (existingUser && existingUser.userId !== userId) {
         await bot.sendMessage(chatId, '❌ *Bu telefon raqam allaqachon ro\'yxatdan o\'tgan!*', { parse_mode: 'Markdown' });
         clearUserSession(userId);
         return;
     }
     
-    if (existingUser && existingUser.user_id === userId) {
+    if (existingUser && existingUser.userId === userId) {
         session.step = 'add_new_car';
         session.data.isExistingUser = true;
         await bot.sendMessage(chatId, `✅ Telefon raqam tasdiqlandi: ${phoneNumber}\n\n🚗 *Yangi avtomobil raqamini kiriting:*\n\nMasalan: 01A777AA\n\n⚠️ Siz maksimum ${MAX_CARS_PER_USER} tagacha avtomobil qo'sha olasiz.`, {
@@ -642,10 +625,9 @@ bot.onText(/\/profile/, async (msg) => {
         return;
     }
     
-    const cars = getUserCars(userId);
-    const carsList = cars.map(c => `🚗 ${c.car_number} (${c.total_diagnostics} ta diagnostika)`).join('\n');
+    const carsList = user.cars.map(c => `🚗 ${c.carNumber} (${c.totalDiagnostics} ta diagnostika)`).join('\n');
     await sendReminder(chatId);
-    await bot.sendMessage(chatId, `📊 *MENGING SAHIFAM*\n\n👤 *Ism:* ${user.full_name || 'Kiritilmagan'}\n📞 *Telefon:* ${user.phone}\n🚗 *Avtomobillar:* ${cars.length}/${MAX_CARS_PER_USER}\n\n${carsList}\n\n🎁 *Umumiy bonuslar:* ${user.total_bonus_count || 0}\n🎉 *Bepul diagnostika:* ${user.total_free_diagnostics || 0} ta\n📊 *Jami diagnostika:* ${user.total_diagnostics_all || 0} ta`, { parse_mode: 'Markdown' });
+    await bot.sendMessage(chatId, `📊 *MENGING SAHIFAM*\n\n👤 *Ism:* ${user.fullName || 'Kiritilmagan'}\n📞 *Telefon:* ${user.phone}\n🚗 *Avtomobillar:* ${user.cars.length}/${MAX_CARS_PER_USER}\n\n${carsList}\n\n🎁 *Umumiy bonuslar:* ${user.totalBonusCount || 0}\n🎉 *Bepul diagnostika:* ${user.totalFreeDiagnostics || 0} ta\n📊 *Jami diagnostika:* ${user.totalDiagnosticsAll || 0} ta`, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/my_cars/, async (msg) => {
@@ -658,22 +640,21 @@ bot.onText(/\/my_cars/, async (msg) => {
         return;
     }
     
-    const cars = getUserCars(userId);
-    if (cars.length === 0) {
+    if (user.cars.length === 0) {
         await bot.sendMessage(chatId, '📭 Sizda hali avtomobillar mavjud emas!\n\n➕ "➕ Yangi avtomobil qo\'shish" tugmasini bosing.');
         return;
     }
     
     let carsText = '🚗 *MENGING AVTOMOBILLARIM*\n\n📌 *Bonus qoidasi:* 5 diagnostika = 1 BEPUL\n━━━━━━━━━━━━━━━━━━\n\n';
-    for (const car of cars) {
-        const nextFree = 5 - car.bonus_count;
-        carsText += `🚗 *${car.car_number}*\n`;
-        carsText += `🎁 Bonus: ${car.bonus_count}/5\n`;
-        carsText += `🎉 Bepul: ${car.free_diagnostics} ta\n`;
-        carsText += `📊 Diagnostika: ${car.total_diagnostics} ta\n`;
-        carsText += `📅 Qo'shilgan: ${new Date(car.added_date).toLocaleDateString()}\n`;
+    for (const car of user.cars) {
+        const nextFree = 5 - car.bonusCount;
+        carsText += `🚗 *${car.carNumber}*\n`;
+        carsText += `🎁 Bonus: ${car.bonusCount}/5\n`;
+        carsText += `🎉 Bepul: ${car.freeDiagnostics} ta\n`;
+        carsText += `📊 Diagnostika: ${car.totalDiagnostics} ta\n`;
+        carsText += `📅 Qo'shilgan: ${new Date(car.addedDate).toLocaleDateString()}\n`;
         
-        if (car.free_diagnostics > 0) {
+        if (car.freeDiagnostics > 0) {
             carsText += `✅ *Bepul diagnostika mavjud!*\n`;
         } else if (nextFree > 0) {
             carsText += `📌 Keyingi BEPUL: ${nextFree} ta diagnostikadan keyin\n`;
@@ -695,21 +676,20 @@ bot.onText(/\/my_bonus/, async (msg) => {
         return;
     }
     
-    const cars = getUserCars(userId);
     let bonusText = '🎁 *MENGING BONUSLARIM*\n\n📌 *Qoida:* Har 5 diagnostikada 1 ta BEPUL!\n━━━━━━━━━━━━━━━━━━\n\n';
-    for (const car of cars) {
-        const nextFree = 5 - car.bonus_count;
-        bonusText += `🚗 *${car.car_number}*\n`;
-        bonusText += `📊 To\'plangan: ${car.bonus_count}/5\n`;
-        bonusText += `🎉 Bepul diagnostika: ${car.free_diagnostics} ta\n`;
+    for (const car of user.cars) {
+        const nextFree = 5 - car.bonusCount;
+        bonusText += `🚗 *${car.carNumber}*\n`;
+        bonusText += `📊 To\'plangan: ${car.bonusCount}/5\n`;
+        bonusText += `🎉 Bepul diagnostika: ${car.freeDiagnostics} ta\n`;
         
-        if (car.free_diagnostics > 0) {
-            bonusText += `✅ *Sizda ${car.free_diagnostics} ta BEPUL diagnostika bor!*\n`;
+        if (car.freeDiagnostics > 0) {
+            bonusText += `✅ *Sizda ${car.freeDiagnostics} ta BEPUL diagnostika bor!*\n`;
             bonusText += `💡 Keyingi diagnostikangiz BEPUL bo'ladi!\n`;
         } else if (nextFree > 0) {
             bonusText += `📌 *Keyingi BEPUL diagnostika:* ${nextFree} ta diagnostikadan keyin\n`;
             bonusText += `   (${nextFree} ta to'lovli diagnostika qilsangiz, 1 ta BEPUL olasiz)\n`;
-        } else if (nextFree === 0 && car.bonus_count === 5) {
+        } else if (nextFree === 0 && car.bonusCount === 5) {
             bonusText += `🎉 *DARHOL BEPUL diagnostika qozondingiz!*\n`;
             bonusText += `✅ Keyingi diagnostikangiz BEPUL bo'ladi!\n`;
         }
@@ -746,11 +726,11 @@ bot.onText(/\/history/, async (msg) => {
     for (const d of diags) {
         let diagText = `📅 *${new Date(d.date).toLocaleDateString()}*\n`;
         diagText += `🕐 ${new Date(d.date).toLocaleTimeString()}\n`;
-        diagText += `🚗 ${d.car_number}\n\n`;
-        diagText += `📝 *Bajarilgan ishlar:*\n${d.work_description}\n\n`;
+        diagText += `🚗 ${d.carNumber}\n\n`;
+        diagText += `📝 *Bajarilgan ishlar:*\n${d.workDescription}\n\n`;
         
-        if (d.additional_notes && d.additional_notes !== '') {
-            diagText += `➕ *Qo'shimcha eslatmalar:*\n${d.additional_notes}\n\n`;
+        if (d.additionalNotes && d.additionalNotes !== '') {
+            diagText += `➕ *Qo'shimcha eslatmalar:*\n${d.additionalNotes}\n\n`;
         }
         
         diagText += `💰 *Narx:* ${d.price > 0 ? d.price.toLocaleString() + ' so\'m' : 'BEPUL'}\n`;
@@ -797,7 +777,7 @@ bot.onText(/\/users/, async (msg) => {
     usersList.slice(0, 15).forEach((u, index) => { 
         msgText += `*${index + 1}. ${u.fullName || 'Ism kiritilmagan'}*\n`;
         msgText += `📞 ${u.phone}\n`;
-        msgText += `🚗 ${u.cars.map(c => c.car_number).join(', ')}\n`;
+        msgText += `🚗 ${u.cars.map(c => c.carNumber).join(', ')}\n`;
         msgText += `📊 ${u.totalDiagnostics} ta diagnostika\n`;
         msgText += `━━━━━━━━━━━━━━━━━━\n`;
     });
@@ -901,10 +881,9 @@ bot.on('message', async (msg) => {
         let foundUser = null;
         let foundCar = null;
         
-        const cars = db.prepare('SELECT * FROM cars WHERE car_number = ?').all(carNumber);
-        for (const car of cars) {
-            const user = getUserByUserId(car.user_id);
-            if (user) {
+        for (const user of users) {
+            const car = user.cars.find(c => c.carNumber === carNumber);
+            if (car) {
                 foundUser = user;
                 foundCar = car;
                 break;
@@ -920,7 +899,7 @@ bot.on('message', async (msg) => {
         session.data.targetCar = foundCar;
         session.step = 'admin_work_description';
         
-        await bot.sendMessage(chatId, `✅ Foydalanuvchi topildi:\n\n👤 ${foundUser.full_name || 'Ism kiritilmagan'}\n📞 ${foundUser.phone}\n🚗 ${foundCar.car_number}\n🎁 Bonus: ${foundCar.bonus_count}/5\n🎉 Bepul: ${foundCar.free_diagnostics}\n\n🔧 *Bajarilgan ishlarni kiriting:*`, { parse_mode: 'Markdown' });
+        await bot.sendMessage(chatId, `✅ Foydalanuvchi topildi:\n\n👤 ${foundUser.fullName || 'Ism kiritilmagan'}\n📞 ${foundUser.phone}\n🚗 ${foundCar.carNumber}\n🎁 Bonus: ${foundCar.bonusCount}/5\n🎉 Bepul: ${foundCar.freeDiagnostics}\n\n🔧 *Bajarilgan ishlarni kiriting:*`, { parse_mode: 'Markdown' });
         return;
     }
     
@@ -936,7 +915,7 @@ bot.on('message', async (msg) => {
         
         const result = addDiagnosticToCar(
             session.data.targetUser.phone,
-            session.data.targetCar.car_number,
+            session.data.targetCar.carNumber,
             session.data.workDescription,
             session.data.additionalNotes
         );
@@ -948,7 +927,7 @@ bot.on('message', async (msg) => {
             return;
         }
         
-        let adminResponse = `🔧 *DIAGNOSTIKA QO'SHILDI*\n\n👤 ${session.data.targetUser.full_name || 'Ism kiritilmagan'}\n🚗 ${result.carNumber}\n📞 ${session.data.targetUser.phone}\n💰 Narx: ${result.price.toLocaleString()} so'm\n\n📝 *Bajarilgan ishlar:*\n${session.data.workDescription}\n`;
+        let adminResponse = `🔧 *DIAGNOSTIKA QO'SHILDI*\n\n👤 ${session.data.targetUser.fullName || 'Ism kiritilmagan'}\n🚗 ${result.carNumber}\n📞 ${session.data.targetUser.phone}\n💰 Narx: ${result.price.toLocaleString()} so'm\n\n📝 *Bajarilgan ishlar:*\n${session.data.workDescription}\n`;
         
         if (session.data.additionalNotes && session.data.additionalNotes !== '') {
             adminResponse += `\n➕ *Qo'shimcha eslatmalar:*\n${session.data.additionalNotes}\n`;
@@ -997,7 +976,7 @@ bot.on('message', async (msg) => {
         userMsg += `🚗 Sifatli xizmat - xavfsizlik kafolati!\n`;
         userMsg += `📌 Eslatma: Har 5 diagnostikada 1 ta BEPUL!`;
         
-        bot.sendMessage(session.data.targetUser.user_id, userMsg, { parse_mode: 'Markdown' }).catch(() => {});
+        bot.sendMessage(session.data.targetUser.userId, userMsg, { parse_mode: 'Markdown' }).catch(() => {});
         
         clearUserSession(userId);
         await sendMainMenu(chatId, true);
@@ -1012,29 +991,27 @@ bot.on('message', async (msg) => {
         return;
     }
     
-    const cars = user ? getUserCars(userId) : [];
-    
     if (text === '📊 Mening sahifam') {
-        const carsList = cars.map(c => `🚗 ${c.car_number} (${c.total_diagnostics} ta diagnostika)`).join('\n');
+        const carsList = user.cars.map(c => `🚗 ${c.carNumber} (${c.totalDiagnostics} ta diagnostika)`).join('\n');
         await sendReminder(chatId);
-        await bot.sendMessage(chatId, `📊 *MENGING SAHIFAM*\n\n👤 *Ism:* ${user.full_name || 'Kiritilmagan'}\n📞 *Telefon:* ${user.phone}\n🚗 *Avtomobillar:* ${cars.length}/${MAX_CARS_PER_USER}\n\n${carsList}\n\n🎁 *Umumiy bonuslar:* ${user.total_bonus_count || 0}\n🎉 *Bepul diagnostika:* ${user.total_free_diagnostics || 0} ta\n📊 *Jami diagnostika:* ${user.total_diagnostics_all || 0} ta`, { parse_mode: 'Markdown' });
+        await bot.sendMessage(chatId, `📊 *MENGING SAHIFAM*\n\n👤 *Ism:* ${user.fullName || 'Kiritilmagan'}\n📞 *Telefon:* ${user.phone}\n🚗 *Avtomobillar:* ${user.cars.length}/${MAX_CARS_PER_USER}\n\n${carsList}\n\n🎁 *Umumiy bonuslar:* ${user.totalBonusCount || 0}\n🎉 *Bepul diagnostika:* ${user.totalFreeDiagnostics || 0} ta\n📊 *Jami diagnostika:* ${user.totalDiagnosticsAll || 0} ta`, { parse_mode: 'Markdown' });
     }
     else if (text === '🚗 Mening avtomobillarim') {
-        if (cars.length === 0) {
+        if (user.cars.length === 0) {
             await bot.sendMessage(chatId, '📭 Sizda hali avtomobillar mavjud emas!\n\n➕ "➕ Yangi avtomobil qo\'shish" tugmasini bosing.', { parse_mode: 'Markdown' });
             return;
         }
         
         let carsText = '🚗 *MENGING AVTOMOBILLARIM*\n\n📌 *Bonus qoidasi:* 5 diagnostika = 1 BEPUL\n━━━━━━━━━━━━━━━━━━\n\n';
-        for (const car of cars) {
-            const nextFree = 5 - car.bonus_count;
-            carsText += `🚗 *${car.car_number}*\n`;
-            carsText += `🎁 Bonus: ${car.bonus_count}/5\n`;
-            carsText += `🎉 Bepul: ${car.free_diagnostics} ta\n`;
-            carsText += `📊 Diagnostika: ${car.total_diagnostics} ta\n`;
-            carsText += `📅 Qo'shilgan: ${new Date(car.added_date).toLocaleDateString()}\n`;
+        for (const car of user.cars) {
+            const nextFree = 5 - car.bonusCount;
+            carsText += `🚗 *${car.carNumber}*\n`;
+            carsText += `🎁 Bonus: ${car.bonusCount}/5\n`;
+            carsText += `🎉 Bepul: ${car.freeDiagnostics} ta\n`;
+            carsText += `📊 Diagnostika: ${car.totalDiagnostics} ta\n`;
+            carsText += `📅 Qo'shilgan: ${new Date(car.addedDate).toLocaleDateString()}\n`;
             
-            if (car.free_diagnostics > 0) {
+            if (car.freeDiagnostics > 0) {
                 carsText += `✅ *Bepul diagnostika mavjud!*\n`;
             } else if (nextFree > 0) {
                 carsText += `📌 Keyingi BEPUL: ${nextFree} ta diagnostikadan keyin\n`;
@@ -1046,7 +1023,7 @@ bot.on('message', async (msg) => {
         await bot.sendMessage(chatId, carsText, { parse_mode: 'Markdown' });
     }
     else if (text === '➕ Yangi avtomobil qo\'shish') {
-        if (cars.length >= MAX_CARS_PER_USER) {
+        if (user.cars.length >= MAX_CARS_PER_USER) {
             await bot.sendMessage(chatId, `❌ Siz maksimum ${MAX_CARS_PER_USER} ta avtomobil qo'sha olasiz!`, { parse_mode: 'Markdown' });
             return;
         }
@@ -1055,30 +1032,30 @@ bot.on('message', async (msg) => {
         newSession.step = 'add_new_car';
         newSession.data.phone = user.phone;
         newSession.data.isExistingUser = true;
-        newSession.data.firstName = user.first_name;
-        newSession.data.lastName = user.last_name;
+        newSession.data.firstName = user.firstName;
+        newSession.data.lastName = user.lastName;
         newSession.data.username = user.username;
         
-        await bot.sendMessage(chatId, `🚗 *Yangi avtomobil raqamini kiriting:*\n\nMasalan: 01A777AA\n\n⚠️ Siz maksimum ${MAX_CARS_PER_USER} tagacha avtomobil qo'sha olasiz.\n📊 Hozirgi avtomobillar soni: ${cars.length}/${MAX_CARS_PER_USER}`, {
+        await bot.sendMessage(chatId, `🚗 *Yangi avtomobil raqamini kiriting:*\n\nMasalan: 01A777AA\n\n⚠️ Siz maksimum ${MAX_CARS_PER_USER} tagacha avtomobil qo'sha olasiz.\n📊 Hozirgi avtomobillar soni: ${user.cars.length}/${MAX_CARS_PER_USER}`, {
             parse_mode: 'Markdown',
             reply_markup: { remove_keyboard: true }
         });
     }
     else if (text === '🎁 Mening bonuslarim') {
         let bonusText = '🎁 *MENGING BONUSLARIM*\n\n📌 *Qoida:* Har 5 diagnostikada 1 ta BEPUL!\n━━━━━━━━━━━━━━━━━━\n\n';
-        for (const car of cars) {
-            const nextFree = 5 - car.bonus_count;
-            bonusText += `🚗 *${car.car_number}*\n`;
-            bonusText += `📊 To\'plangan: ${car.bonus_count}/5\n`;
-            bonusText += `🎉 Bepul diagnostika: ${car.free_diagnostics} ta\n`;
+        for (const car of user.cars) {
+            const nextFree = 5 - car.bonusCount;
+            bonusText += `🚗 *${car.carNumber}*\n`;
+            bonusText += `📊 To\'plangan: ${car.bonusCount}/5\n`;
+            bonusText += `🎉 Bepul diagnostika: ${car.freeDiagnostics} ta\n`;
             
-            if (car.free_diagnostics > 0) {
-                bonusText += `✅ *Sizda ${car.free_diagnostics} ta BEPUL diagnostika bor!*\n`;
+            if (car.freeDiagnostics > 0) {
+                bonusText += `✅ *Sizda ${car.freeDiagnostics} ta BEPUL diagnostika bor!*\n`;
                 bonusText += `💡 Keyingi diagnostikangiz BEPUL bo'ladi!\n`;
             } else if (nextFree > 0) {
                 bonusText += `📌 *Keyingi BEPUL diagnostika:* ${nextFree} ta diagnostikadan keyin\n`;
                 bonusText += `   (${nextFree} ta to'lovli diagnostika qilsangiz, 1 ta BEPUL olasiz)\n`;
-            } else if (nextFree === 0 && car.bonus_count === 5) {
+            } else if (nextFree === 0 && car.bonusCount === 5) {
                 bonusText += `🎉 *DARHOL BEPUL diagnostika qozondingiz!*\n`;
                 bonusText += `✅ Keyingi diagnostikangiz BEPUL bo'ladi!\n`;
             }
@@ -1105,11 +1082,11 @@ bot.on('message', async (msg) => {
         for (const d of diags) {
             let diagText = `📅 *${new Date(d.date).toLocaleDateString()}*\n`;
             diagText += `🕐 ${new Date(d.date).toLocaleTimeString()}\n`;
-            diagText += `🚗 ${d.car_number}\n\n`;
-            diagText += `📝 *Bajarilgan ishlar:*\n${d.work_description}\n\n`;
+            diagText += `🚗 ${d.carNumber}\n\n`;
+            diagText += `📝 *Bajarilgan ishlar:*\n${d.workDescription}\n\n`;
             
-            if (d.additional_notes && d.additional_notes !== '') {
-                diagText += `➕ *Qo'shimcha eslatmalar:*\n${d.additional_notes}\n\n`;
+            if (d.additionalNotes && d.additionalNotes !== '') {
+                diagText += `➕ *Qo'shimcha eslatmalar:*\n${d.additionalNotes}\n\n`;
             }
             
             diagText += `💰 *Narx:* ${d.price > 0 ? d.price.toLocaleString() + ' so\'m' : 'BEPUL'}\n`;
@@ -1156,7 +1133,7 @@ bot.on('message', async (msg) => {
             msg += `📞 ${u.phone}\n`;
             msg += `🚗 Avtomobillar:\n`;
             u.cars.forEach(car => {
-                msg += `   • ${car.car_number} (${car.total_diagnostics} ta diagnostika)\n`;
+                msg += `   • ${car.carNumber} (${car.totalDiagnostics} ta diagnostika)\n`;
             });
             msg += `📊 Jami diagnostika: ${u.totalDiagnostics} ta\n`;
             msg += `📅 Ro\'yxatdan o\'tgan: ${new Date(u.registeredDate).toLocaleDateString()}\n`;
@@ -1194,7 +1171,7 @@ bot.on('message', async (msg) => {
         if (errorsList.length === 0) { await bot.sendMessage(chatId, '✅ Hech qanday xatolik yo\'q'); return; }
         let msg = '⚠️ *XATOLIKLAR*\n\n';
         errorsList.slice(0, 10).forEach(e => { 
-            msg += `🚗 ${e.car_number}\n🔴 ${e.error_code}\n📝 ${e.error_description}\n📅 ${new Date(e.date).toLocaleDateString()}\n━━━━━━\n`; 
+            msg += `🚗 ${e.carNumber}\n🔴 ${e.errorCode}\n📝 ${e.errorDescription}\n📅 ${new Date(e.date).toLocaleDateString()}\n━━━━━━\n`; 
         });
         await bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
     }
@@ -1202,9 +1179,9 @@ bot.on('message', async (msg) => {
         const diags = getAllDiagnostics(20);
         if (diags.length === 0) { await bot.sendMessage(chatId, '📭 Hech qanday diagnostika yo\'q'); return; }
         for (const d of diags.slice(0, 10)) {
-            let diagText = `📅 ${new Date(d.date).toLocaleDateString()}\n🚗 ${d.car_number}\n📝 ${d.work_description.substring(0, 50)}...\n💰 ${d.price > 0 ? d.price.toLocaleString() + ' so\'m' : 'BEPUL'}\n`;
-            if (d.additional_notes && d.additional_notes !== '') {
-                diagText += `➕ ${d.additional_notes.substring(0, 50)}...\n`;
+            let diagText = `📅 ${new Date(d.date).toLocaleDateString()}\n🚗 ${d.carNumber}\n📝 ${d.workDescription.substring(0, 50)}...\n💰 ${d.price > 0 ? d.price.toLocaleString() + ' so\'m' : 'BEPUL'}\n`;
+            if (d.additionalNotes && d.additionalNotes !== '') {
+                diagText += `➕ ${d.additionalNotes.substring(0, 50)}...\n`;
             }
             diagText += `━━━━━━━━━━\n`;
             await bot.sendMessage(chatId, diagText, { parse_mode: 'Markdown' });
@@ -1215,17 +1192,14 @@ bot.on('message', async (msg) => {
         if (diags.length === 0) { await bot.sendMessage(chatId, '📭 Bugun hech qanday diagnostika yo\'q'); return; }
         let msg = '📅 *BUGUNGI DIAGNOSTIKALAR*\n\n';
         diags.forEach(d => { 
-            msg += `🚗 ${d.car_number}\n📝 ${d.work_description.substring(0, 40)}...\n💰 ${d.price > 0 ? d.price.toLocaleString() + ' so\'m' : 'BEPUL'}\n━━━━━━\n`; 
+            msg += `🚗 ${d.carNumber}\n📝 ${d.workDescription.substring(0, 40)}...\n💰 ${d.price > 0 ? d.price.toLocaleString() + ' so\'m' : 'BEPUL'}\n━━━━━━\n`; 
         });
         await bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
     }
     else if (text === '💾 Backup yaratish') {
         await bot.sendMessage(chatId, '💾 *Backup yaratilmoqda...*', { parse_mode: 'Markdown' });
-        if (createBackup()) {
-            await bot.sendMessage(chatId, `✅ *Backup yaratildi!*\n\n📅 ${new Date().toLocaleString()}`, { parse_mode: 'Markdown' });
-        } else {
-            await bot.sendMessage(chatId, '❌ *Backup yaratishda xatolik!*', { parse_mode: 'Markdown' });
-        }
+        createBackup();
+        await bot.sendMessage(chatId, `✅ *Backup yaratildi!*\n\n📅 ${new Date().toLocaleString()}`, { parse_mode: 'Markdown' });
     }
     else if (text === '🔄 Database tiklash') {
         const backups = listBackups();
@@ -1248,6 +1222,7 @@ bot.on('callback_query', async (query) => {
         await bot.sendMessage(chatId, '🔄 *Database tiklanmoqda...*\n\n⚠️ Bu jarayon bir necha daqiqa vaqt olishi mumkin.', { parse_mode: 'Markdown' });
         
         if (restoreBackup(backupName)) {
+            loadData();
             await bot.sendMessage(chatId, `✅ *Database muvaffaqiyatli tiklandi!*\n\n📁 ${backupName}\n📅 ${new Date().toLocaleString()}\n\n🔄 Barcha foydalanuvchilar ma'lumotlari tiklandi.`, { parse_mode: 'Markdown' });
         } else {
             await bot.sendMessage(chatId, '❌ *Database tiklashda xatolik!*\n\nBackup fayli buzilgan bo\'lishi mumkin.', { parse_mode: 'Markdown' });
@@ -1275,15 +1250,9 @@ console.log('🚗 ISUZU DOCTOR BOT ISHGA TUSHDI');
 console.log('='.repeat(60));
 console.log(`👑 Admin telefon: ${ADMIN_PHONE}`);
 console.log(`💰 Diagnostika narxi: ${DIAGNOSTIC_PRICE.toLocaleString()} so'm`);
-
-const userCount = db.prepare('SELECT COUNT(*) as count FROM users WHERE is_admin = 0').get().count;
-const carCount = db.prepare('SELECT COUNT(*) as count FROM cars').get().count;
-const diagCount = db.prepare('SELECT COUNT(*) as count FROM diagnostics').get().count;
-
-console.log(`👥 Foydalanuvchilar: ${userCount}`);
-console.log(`🚗 Avtomobillar: ${carCount}`);
-console.log(`🔧 Diagnostikalar: ${diagCount}`);
-console.log(`💾 Database manzili: ${DB_PATH}`);
-console.log(`📁 Volume manzili: ${VOLUME_PATH}`);
+console.log(`👥 Foydalanuvchilar: ${users.filter(u => !u.isAdmin).length}`);
+console.log(`🚗 Avtomobillar: ${users.reduce((sum, u) => sum + (u.cars ? u.cars.length : 0), 0)}`);
+console.log(`🔧 Diagnostikalar: ${diagnostics.length}`);
+console.log(`💾 Volume manzili: ${VOLUME_PATH}`);
 console.log('='.repeat(60));
 console.log('✅ Bot ishlashga tayyor!');
