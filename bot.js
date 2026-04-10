@@ -22,7 +22,7 @@ Agar avtomobilingiz doimo soz, ishonchli va yo‘llarda sizni yarim yo‘lda qol
 `;
 
 // -------------------- RAILWAY VOLUME YO'LLARI --------------------
-// Railway Volume mount path - bu muhim!
+// Railway Volume mount path
 const VOLUME_PATH = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, 'data');
 const BACKUP_DIR = path.join(VOLUME_PATH, 'backups');
 
@@ -146,7 +146,6 @@ function loadData() {
         
         console.log(`✅ Yuklandi: ${users.length} foydalanuvchi, ${diagnostics.length} diagnostika`);
         console.log(`✅ Volume manzili: ${VOLUME_PATH}`);
-        console.log(`✅ Ma'lumotlar fayllari volume da saqlanmoqda`);
     } catch (err) {
         console.error('Ma\'lumot yuklashda xatolik:', err);
         users = [];
