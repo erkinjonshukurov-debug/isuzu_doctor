@@ -162,10 +162,14 @@ function isAdmin(userId) {
     return user ? user.isAdmin === true : false;
 }
 
-function addNewUser(userId, phoneNumber, carNumber) {
+function addNewUser(userId, phoneNumber, carNumber, firstName, lastName, username) {
     const newUser = {
         userId: userId,
         phone: phoneNumber,
+        firstName: firstName || '',
+        lastName: lastName || '',
+        username: username || '',
+        fullName: `${firstName || ''} ${lastName || ''}`.trim(),
         isAdmin: false,
         isActive: true,
         registeredDate: new Date().toISOString(),
@@ -187,7 +191,7 @@ function addNewUser(userId, phoneNumber, carNumber) {
     return newUser;
 }
 
-function addCarToUser(phoneNumber, carNumber) {
+function addCarToUser(phoneNumber, carNumber, userInfo = {}) {
     const user = getUserByPhone(phoneNumber);
     if (!user) return { success: false, message: 'Foydalanuvchi topilmadi' };
     
@@ -198,6 +202,14 @@ function addCarToUser(phoneNumber, carNumber) {
     const existingCar = user.cars.find(c => c.carNumber === carNumber);
     if (existingCar) {
         return { success: false, message: 'Bu avtomobil raqami allaqachon qo\'shilgan!' };
+    }
+    
+    if (userInfo.firstName) {
+        user.firstName = userInfo.firstName;
+        user.lastName = userInfo.lastName || '';
+        user.username = userInfo.username || '';
+        user.fullName = `${userInfo.firstName || ''} ${userInfo.lastName || ''}`.trim();
+        saveUsers();
     }
     
     user.cars.push({
@@ -292,7 +304,8 @@ function getNearBonusCars() {
                     phone: user.phone,
                     carNumber: car.carNumber,
                     bonusCount: car.bonusCount,
-                    remaining: 5 - car.bonusCount
+                    remaining: 5 - car.bonusCount,
+                    fullName: user.fullName || 'Ism kiritilmagan'
                 });
             }
         }
@@ -332,6 +345,20 @@ function getStatistics() {
 
 function getErrors() {
     return errors.slice(-50).reverse();
+}
+
+function getAllUsersWithDetails() {
+    return users.filter(u => !u.isAdmin).map(u => ({
+        userId: u.userId,
+        fullName: u.fullName || 'Ism kiritilmagan',
+        firstName: u.firstName || '',
+        lastName: u.lastName || '',
+        username: u.username || '',
+        phone: u.phone,
+        cars: u.cars,
+        totalDiagnostics: u.totalDiagnosticsAll || 0,
+        registeredDate: u.registeredDate
+    }));
 }
 
 // -------------------- KEYBOARDS --------------------
@@ -429,7 +456,6 @@ async function sendMainMenu(chatId, isAdminUser = false) {
         }
     } catch (error) {
         console.error('Menu yuborishda xatolik:', error);
-        // Fallback: keyboardsiz yuborish
         if (isAdminUser) {
             await bot.sendMessage(chatId, '👑 Admin paneliga xush kelibsiz!\n\n/statistika - Statistika\n/users - Foydalanuvchilar\n/add_diagnostic - Diagnostika qo\'shish\n/close - Asosiy menyu');
         } else {
@@ -442,6 +468,9 @@ async function sendMainMenu(chatId, isAdminUser = false) {
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
+    const firstName = msg.from.first_name || '';
+    const lastName = msg.from.last_name || '';
+    const username = msg.from.username || '';
     
     clearUserSession(userId);
     const existingUser = getUserByUserId(userId);
@@ -450,11 +479,24 @@ bot.onText(/\/start/, async (msg) => {
         await sendReminder(chatId);
         
         if (existingUser) {
+            if (!existingUser.firstName && firstName) {
+                existingUser.firstName = firstName;
+                existingUser.lastName = lastName;
+                existingUser.username = username;
+                existingUser.fullName = `${firstName} ${lastName}`.trim();
+                saveUsers();
+            }
+            
             const carsCount = existingUser.cars.length;
-            const welcomeText = `👋 *Xush kelibsiz!*\n\n📞 Telefon: ${existingUser.phone}\n🚗 Avtomobillar: ${carsCount} ta\n🎁 Umumiy bonus: ${existingUser.totalBonusCount || 0}\n🎉 Bepul: ${existingUser.totalFreeDiagnostics || 0} ta\n📊 Jami diagnostika: ${existingUser.totalDiagnosticsAll || 0} ta`;
+            const welcomeText = `👋 *Xush kelibsiz, ${existingUser.fullName || firstName || 'hurmatli mijoz'}!*\n\n📞 Telefon: ${existingUser.phone}\n🚗 Avtomobillar: ${carsCount} ta\n🎁 Umumiy bonus: ${existingUser.totalBonusCount || 0}\n🎉 Bepul: ${existingUser.totalFreeDiagnostics || 0} ta\n📊 Jami diagnostika: ${existingUser.totalDiagnosticsAll || 0} ta`;
             await bot.sendMessage(chatId, welcomeText, { parse_mode: 'Markdown' });
             await sendMainMenu(chatId, existingUser.isAdmin);
         } else {
+            const session = getUserSession(userId);
+            session.data.firstName = firstName;
+            session.data.lastName = lastName;
+            session.data.username = username;
+            
             await bot.sendMessage(chatId, '🚗 *ISUZU DOCTOR* tizimiga xush kelibsiz!\n\n📱 Iltimos, telefon raqamingizni yuboring:', {
                 parse_mode: 'Markdown',
                 ...getPhoneKeyboard()
@@ -470,6 +512,9 @@ bot.on('contact', async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
     const contact = msg.contact;
+    const firstName = msg.from.first_name || '';
+    const lastName = msg.from.last_name || '';
+    const username = msg.from.username || '';
     
     if (!contact) return;
     
@@ -481,10 +526,20 @@ bot.on('contact', async (msg) => {
     const session = getUserSession(userId);
     session.data.phone = phoneNumber;
     
+    if (!session.data.firstName) {
+        session.data.firstName = firstName;
+        session.data.lastName = lastName;
+        session.data.username = username;
+    }
+    
     if (phoneNumber === ADMIN_PHONE) {
         const newUser = {
             userId: userId,
             phone: phoneNumber,
+            firstName: firstName,
+            lastName: lastName,
+            username: username,
+            fullName: `${firstName} ${lastName}`.trim(),
             isAdmin: true,
             isActive: true,
             registeredDate: new Date().toISOString(),
@@ -553,7 +608,7 @@ bot.onText(/\/profile/, async (msg) => {
     
     const carsList = user.cars.map(c => `🚗 ${c.carNumber} (${c.totalDiagnostics} ta diagnostika)`).join('\n');
     await sendReminder(chatId);
-    await bot.sendMessage(chatId, `📊 *MENGING SAHIFAM*\n\n📞 ${user.phone}\n🚗 Avtomobillar: ${user.cars.length}/${MAX_CARS_PER_USER}\n\n${carsList}\n\n🎁 Umumiy bonuslar: ${user.totalBonusCount || 0}\n🎉 Bepul diagnostika: ${user.totalFreeDiagnostics || 0} ta\n📊 Jami diagnostika: ${user.totalDiagnosticsAll || 0} ta`, { parse_mode: 'Markdown' });
+    await bot.sendMessage(chatId, `📊 *MENGING SAHIFAM*\n\n👤 *Ism:* ${user.fullName || 'Kiritilmagan'}\n📞 *Telefon:* ${user.phone}\n🚗 *Avtomobillar:* ${user.cars.length}/${MAX_CARS_PER_USER}\n\n${carsList}\n\n🎁 *Umumiy bonuslar:* ${user.totalBonusCount || 0}\n🎉 *Bepul diagnostika:* ${user.totalFreeDiagnostics || 0} ta\n📊 *Jami diagnostika:* ${user.totalDiagnosticsAll || 0} ta`, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/my_cars/, async (msg) => {
@@ -693,11 +748,19 @@ bot.onText(/\/users/, async (msg) => {
     const userId = msg.from.id;
     if (!isAdmin(userId)) return;
     
-    const usersList = users.filter(u => !u.isAdmin);
-    if (usersList.length === 0) { await bot.sendMessage(chatId, '📭 Hech qanday foydalanuvchi yo\'q'); return; }
-    let msgText = '👥 *FOYDALANUVCHILAR*\n\n';
-    usersList.slice(0, 15).forEach(u => { 
-        msgText += `📞 ${u.phone}\n🚗 ${u.cars.length} ta avtomobil\n📊 ${u.totalDiagnosticsAll || 0} ta diagnostika\n━━━━━━\n`; 
+    const usersList = getAllUsersWithDetails();
+    if (usersList.length === 0) { 
+        await bot.sendMessage(chatId, '📭 Hech qanday foydalanuvchi yo\'q'); 
+        return; 
+    }
+    
+    let msgText = '👥 *FOYDALANUVCHILAR*\n━━━━━━━━━━━━━━━━━━\n\n';
+    usersList.slice(0, 15).forEach((u, index) => { 
+        msgText += `*${index + 1}. ${u.fullName || 'Ism kiritilmagan'}*\n`;
+        msgText += `📞 ${u.phone}\n`;
+        msgText += `🚗 ${u.cars.map(c => c.carNumber).join(', ')}\n`;
+        msgText += `📊 ${u.totalDiagnostics} ta diagnostika\n`;
+        msgText += `━━━━━━━━━━━━━━━━━━\n`;
     });
     await bot.sendMessage(chatId, msgText, { parse_mode: 'Markdown' });
 });
@@ -735,12 +798,25 @@ bot.on('message', async (msg) => {
             return;
         }
         
-        addNewUser(userId, session.data.phone, carNumber);
+        const userFullName = `${session.data.firstName || ''} ${session.data.lastName || ''}`.trim();
+        
+        addNewUser(
+            userId, 
+            session.data.phone, 
+            carNumber,
+            session.data.firstName || '',
+            session.data.lastName || '',
+            session.data.username || ''
+        );
         
         try {
             await sendReminder(chatId);
-            await bot.sendMessage(chatId, `✅ *Siz muvaffaqiyatli ro'yxatdan o'tdingiz!*\n\n🚗 Avtomobil: ${carNumber}\n📞 Telefon: ${session.data.phone}\n\n🎁 *Bonus tizimi:* Har 5 diagnostikada 1 ta BEPUL!\n\n➕ "➕ Yangi avtomobil qo'shish" tugmasi orqali yana avtomobil qo'shishingiz mumkin.`, { parse_mode: 'Markdown' });
+            await bot.sendMessage(chatId, `✅ *Siz muvaffaqiyatli ro'yxatdan o'tdingiz, ${userFullName || 'hurmatli mijoz'}!*\n\n👤 Ism: ${userFullName || 'Kiritilmagan'}\n🚗 Avtomobil: ${carNumber}\n📞 Telefon: ${session.data.phone}\n\n🎁 *Bonus tizimi:* Har 5 diagnostikada 1 ta BEPUL!\n\n➕ "➕ Yangi avtomobil qo'shish" tugmasi orqali yana avtomobil qo'shishingiz mumkin.`, { parse_mode: 'Markdown' });
             await sendMainMenu(chatId, false);
+            
+            for (const adminId of ADMIN_IDS) {
+                bot.sendMessage(adminId, `🆕 *YANGI FOYDALANUVCHI!*\n\n👤 Ism: ${userFullName || 'Kiritilmagan'}\n📞 Telefon: ${session.data.phone}\n🚗 Avtomobil: ${carNumber}\n📅 Sana: ${new Date().toLocaleString()}`, { parse_mode: 'Markdown' }).catch(() => {});
+            }
         } catch (error) {
             console.error('Ro\'yxatdan o\'tkazish xatolik:', error);
         }
@@ -757,7 +833,11 @@ bot.on('message', async (msg) => {
             return;
         }
         
-        const result = addCarToUser(session.data.phone, carNumber);
+        const result = addCarToUser(session.data.phone, carNumber, {
+            firstName: session.data.firstName,
+            lastName: session.data.lastName,
+            username: session.data.username
+        });
         
         if (result.success) {
             try {
@@ -800,7 +880,7 @@ bot.on('message', async (msg) => {
         session.data.targetCar = foundCar;
         session.step = 'admin_work_description';
         
-        await bot.sendMessage(chatId, `✅ Foydalanuvchi topildi:\n\n📞 ${foundUser.phone}\n🚗 ${foundCar.carNumber}\n🎁 Bonus: ${foundCar.bonusCount}/5\n🎉 Bepul: ${foundCar.freeDiagnostics}\n\n🔧 *Bajarilgan ishlarni kiriting:*`, { parse_mode: 'Markdown' });
+        await bot.sendMessage(chatId, `✅ Foydalanuvchi topildi:\n\n👤 ${foundUser.fullName || 'Ism kiritilmagan'}\n📞 ${foundUser.phone}\n🚗 ${foundCar.carNumber}\n🎁 Bonus: ${foundCar.bonusCount}/5\n🎉 Bepul: ${foundCar.freeDiagnostics}\n\n🔧 *Bajarilgan ishlarni kiriting:*`, { parse_mode: 'Markdown' });
         return;
     }
     
@@ -828,8 +908,7 @@ bot.on('message', async (msg) => {
             return;
         }
         
-        // Admin uchun hisobot
-        let adminResponse = `🔧 *DIAGNOSTIKA QO'SHILDI*\n\n🚗 ${result.carNumber}\n📞 ${session.data.targetUser.phone}\n💰 Narx: ${result.price.toLocaleString()} so'm\n\n📝 *Bajarilgan ishlar:*\n${session.data.workDescription}\n`;
+        let adminResponse = `🔧 *DIAGNOSTIKA QO'SHILDI*\n\n👤 ${session.data.targetUser.fullName || 'Ism kiritilmagan'}\n🚗 ${result.carNumber}\n📞 ${session.data.targetUser.phone}\n💰 Narx: ${result.price.toLocaleString()} so'm\n\n📝 *Bajarilgan ishlar:*\n${session.data.workDescription}\n`;
         
         if (session.data.additionalNotes && session.data.additionalNotes !== '') {
             adminResponse += `\n➕ *Qo'shimcha eslatmalar:*\n${session.data.additionalNotes}\n`;
@@ -849,7 +928,6 @@ bot.on('message', async (msg) => {
         
         await bot.sendMessage(chatId, adminResponse, { parse_mode: 'Markdown' });
         
-        // Foydalanuvchi uchun hisobot
         let userMsg = `🔧 *DIAGNOSTIKA NATIJALARI*\n\n`;
         userMsg += `🚗 *Avtomobil:* ${result.carNumber}\n`;
         userMsg += `📅 *Sana:* ${new Date().toLocaleString()}\n\n`;
@@ -897,7 +975,7 @@ bot.on('message', async (msg) => {
     if (text === '📊 Mening sahifam') {
         const carsList = user.cars.map(c => `🚗 ${c.carNumber} (${c.totalDiagnostics} ta diagnostika)`).join('\n');
         await sendReminder(chatId);
-        await bot.sendMessage(chatId, `📊 *MENGING SAHIFAM*\n\n📞 ${user.phone}\n🚗 Avtomobillar: ${user.cars.length}/${MAX_CARS_PER_USER}\n\n${carsList}\n\n🎁 Umumiy bonuslar: ${user.totalBonusCount || 0}\n🎉 Bepul diagnostika: ${user.totalFreeDiagnostics || 0} ta\n📊 Jami diagnostika: ${user.totalDiagnosticsAll || 0} ta`, { parse_mode: 'Markdown' });
+        await bot.sendMessage(chatId, `📊 *MENGING SAHIFAM*\n\n👤 *Ism:* ${user.fullName || 'Kiritilmagan'}\n📞 *Telefon:* ${user.phone}\n🚗 *Avtomobillar:* ${user.cars.length}/${MAX_CARS_PER_USER}\n\n${carsList}\n\n🎁 *Umumiy bonuslar:* ${user.totalBonusCount || 0}\n🎉 *Bepul diagnostika:* ${user.totalFreeDiagnostics || 0} ta\n📊 *Jami diagnostika:* ${user.totalDiagnosticsAll || 0} ta`, { parse_mode: 'Markdown' });
     }
     else if (text === '🚗 Mening avtomobillarim') {
         if (user.cars.length === 0) {
@@ -935,6 +1013,9 @@ bot.on('message', async (msg) => {
         newSession.step = 'add_new_car';
         newSession.data.phone = user.phone;
         newSession.data.isExistingUser = true;
+        newSession.data.firstName = user.firstName;
+        newSession.data.lastName = user.lastName;
+        newSession.data.username = user.username;
         
         await bot.sendMessage(chatId, `🚗 *Yangi avtomobil raqamini kiriting:*\n\nMasalan: 01A777AA\n\n⚠️ Siz maksimum ${MAX_CARS_PER_USER} tagacha avtomobil qo'sha olasiz.\n📊 Hozirgi avtomobillar soni: ${user.cars.length}/${MAX_CARS_PER_USER}`, {
             parse_mode: 'Markdown',
@@ -1015,17 +1096,33 @@ bot.on('message', async (msg) => {
     const text = msg.text;
     
     if (!isAdmin(userId)) return;
+    
     if (text === '📊 Statistika') {
         const stats = getStatistics();
         await bot.sendMessage(chatId, `📊 *STATISTIKA*\n\n👥 Foydalanuvchilar: ${stats.totalUsers}\n🚗 Avtomobillar: ${stats.totalCars}\n🔧 Jami: ${stats.totalDiagnostics}\n💰 To'lovli: ${stats.paidDiagnostics}\n🎉 Bepul: ${stats.freeDiagnostics}\n💵 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n⚠️ Xatoliklar: ${stats.totalErrors}`, { parse_mode: 'Markdown' });
     }
     else if (text === '👥 Foydalanuvchilar') {
-        const usersList = users.filter(u => !u.isAdmin);
-        if (usersList.length === 0) { await bot.sendMessage(chatId, '📭 Hech qanday foydalanuvchi yo\'q'); return; }
-        let msg = '👥 *FOYDALANUVCHILAR*\n\n';
-        usersList.slice(0, 15).forEach(u => { 
-            msg += `📞 ${u.phone}\n🚗 ${u.cars.length} ta avtomobil\n📊 ${u.totalDiagnosticsAll || 0} ta diagnostika\n━━━━━━\n`; 
+        const usersList = getAllUsersWithDetails();
+        if (usersList.length === 0) { 
+            await bot.sendMessage(chatId, '📭 Hech qanday foydalanuvchi yo\'q'); 
+            return; 
+        }
+        
+        let msg = '👥 *FOYDALANUVCHILAR RO\'YXATI*\n━━━━━━━━━━━━━━━━━━\n\n';
+        usersList.slice(0, 20).forEach((u, index) => { 
+            msg += `*${index + 1}. ${u.fullName || 'Ism kiritilmagan'}*\n`;
+            msg += `📞 ${u.phone}\n`;
+            msg += `🚗 Avtomobillar:\n`;
+            u.cars.forEach(car => {
+                msg += `   • ${car.carNumber} (${car.totalDiagnostics} ta diagnostika)\n`;
+            });
+            msg += `📊 Jami diagnostika: ${u.totalDiagnostics} ta\n`;
+            msg += `📅 Ro\'yxatdan o\'tgan: ${new Date(u.registeredDate).toLocaleDateString()}\n`;
+            msg += `━━━━━━━━━━━━━━━━━━\n`;
         });
+        if (usersList.length > 20) {
+            msg += `\n📌 *Jami ${usersList.length} ta foydalanuvchi* (oxirgi 20 tasi ko\'rsatilgan)`;
+        }
         await bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
     }
     else if (text === '🔧 Diagnostika qo\'shish') {
@@ -1041,6 +1138,7 @@ bot.on('message', async (msg) => {
         }
         let msg = '🎁 *BONUSGA YAQIN AVTOMOBILLAR*\n\n📌 *Qoida:* Har 5 diagnostikada 1 ta BEPUL!\n━━━━━━━━━━━━━━━━━━\n\n';
         nearBonus.forEach(c => { 
+            msg += `👤 ${c.fullName}\n`;
             msg += `🚗 ${c.carNumber}\n`;
             msg += `📞 ${c.phone}\n`;
             msg += `🎁 ${c.bonusCount}/5 diagnostika\n`;
