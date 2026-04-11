@@ -653,25 +653,20 @@ function getAllUsersWithDetails() {
     }));
 }
 
-// ======================== REPLY KEYBOARD ========================
-// Foydalanuvchi uchun reply keyboard (Android uchun optimallashtirilgan)
+// ======================== REPLY KEYBOARD - TO'G'RI ISHLAYDI ========================
+// Foydalanuvchi uchun reply keyboard
 function getUserReplyKeyboard() {
     return {
         reply_markup: {
             keyboard: [
-                ['📊 Mening sahifam'],
-                ['🚗 Mening avtomobillarim'],
-                ['🎁 Mening bonuslarim'],
-                ['➕ Yangi avtomobil qo\'shish'],
-                ['📋 Diagnostika tarixim'],
-                ['📸 Bizning Instagram'],
-                ['👥 Telegram guruhimiz'],
-                ['ℹ️ Ma\'lumot'],
+                ['📊 Mening sahifam', '🚗 Mening avtomobillarim'],
+                ['🎁 Mening bonuslarim', '➕ Yangi avtomobil qo\'shish'],
+                ['📋 Diagnostika tarixim', '📸 Bizning Instagram'],
+                ['👥 Telegram guruhimiz', 'ℹ️ Ma\'lumot'],
                 ['❌ Asosiy menyu']
             ],
             resize_keyboard: true,
-            one_time_keyboard: false,
-            is_persistent: true
+            one_time_keyboard: false
         }
     };
 }
@@ -679,18 +674,12 @@ function getUserReplyKeyboard() {
 // Admin uchun reply keyboard
 function getAdminReplyKeyboard() {
     const keyboard = [
-        ['📊 Statistika'],
-        ['👥 Foydalanuvchilar'],
-        ['🔧 Diagnostika qo\'shish'],
-        ['🎁 Bonusga yaqinlar'],
-        ['⚠️ Xatoliklar'],
-        ['📋 Diagnostikalar tarixi'],
-        ['📅 Bugungi diagnostikalar'],
-        ['📄 Hisobot olish'],
-        ['💾 Backup yaratish'],
-        ['🔄 Database tiklash'],
-        ['🚫 Foydalanuvchini boshqarish'],
-        ['🔐 Xavfsizlik']
+        ['📊 Statistika', '👥 Foydalanuvchilar'],
+        ['🔧 Diagnostika qo\'shish', '🎁 Bonusga yaqinlar'],
+        ['⚠️ Xatoliklar', '📋 Diagnostikalar tarixi'],
+        ['📅 Bugungi diagnostikalar', '📄 Hisobot olish'],
+        ['💾 Backup yaratish', '🔄 Database tiklash'],
+        ['🚫 Foydalanuvchini boshqarish', '🔐 Xavfsizlik']
     ];
     
     if (!isUpdateMode) {
@@ -705,8 +694,7 @@ function getAdminReplyKeyboard() {
         reply_markup: {
             keyboard: keyboard,
             resize_keyboard: true,
-            one_time_keyboard: false,
-            is_persistent: true
+            one_time_keyboard: false
         }
     };
 }
@@ -733,7 +721,7 @@ function removeKeyboard() {
     };
 }
 
-// Asosiy menyuni yuborish (reply keyboard bilan)
+// Asosiy menyuni yuborish
 async function sendMainMenu(chatId, isAdminUser = false) {
     try {
         await sendReminder(chatId);
@@ -751,6 +739,12 @@ async function sendMainMenu(chatId, isAdminUser = false) {
         }
     } catch (error) {
         console.error('Menu yuborishda xatolik:', error);
+        // Xatolik bo'lsa matnli menyu
+        if (isAdminUser) {
+            await bot.sendMessage(chatId, '👑 Admin paneli\n\n/statistika - Statistika\n/users - Foydalanuvchilar\n/add_diagnostic - Diagnostika qoshish\n/close - Asosiy menyu');
+        } else {
+            await bot.sendMessage(chatId, '🏠 Asosiy menyu\n\n/profile - Mening sahifam\n/my_cars - Mening avtomobillarim\n/my_bonus - Mening bonuslarim\n/add_car - Yangi avtomobil\n/history - Diagnostika tarixi\n/info - Malumot\n/close - Asosiy menyu');
+        }
     }
 }
 
