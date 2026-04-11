@@ -139,47 +139,6 @@ async function notifyAllUsersAboutUpdate() {
     return { success: successCount, fail: failCount };
 }
 
-async function exportUserDataForMigration(userId) {
-    const user = getUserByUserId(userId);
-    if (!user) return null;
-    
-    const userDiagnostics = diagnostics.filter(d => d.userId === userId);
-    
-    const exportData = {
-        version: BOT_VERSION,
-        exportDate: new Date().toISOString(),
-        user: {
-            userId: user.userId,
-            phone: user.phone,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            username: user.username,
-            fullName: user.fullName,
-            registeredDate: user.registeredDate,
-            totalBonusCount: user.totalBonusCount,
-            totalFreeDiagnostics: user.totalFreeDiagnostics,
-            totalDiagnosticsAll: user.totalDiagnosticsAll,
-            cars: user.cars.map(car => ({
-                carNumber: car.carNumber,
-                bonusCount: car.bonusCount,
-                freeDiagnostics: car.freeDiagnostics,
-                totalDiagnostics: car.totalDiagnostics,
-                addedDate: car.addedDate
-            }))
-        },
-        diagnostics: userDiagnostics.map(d => ({
-            carNumber: d.carNumber,
-            date: d.date,
-            workDescription: d.workDescription,
-            additionalNotes: d.additionalNotes,
-            price: d.price,
-            isFree: d.isFree
-        }))
-    };
-    
-    return exportData;
-}
-
 // -------------------- ESLATMA YUBORISH FUNKSIYASI --------------------
 async function sendReminder(chatId) {
     try {
@@ -255,6 +214,11 @@ function loadData() {
         
         if (fs.existsSync(USERS_FILE)) {
             users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+            // Eski foydalanuvchilarga isBlocked field qo'shish
+            users.forEach(u => {
+                if (u.isBlocked === undefined) u.isBlocked = false;
+            });
+            saveUsers();
         } else {
             users = [];
             saveUsers();
@@ -594,20 +558,7 @@ function getAdminKeyboard() {
 }
 
 function getUserKeyboard() {
-    if (isUpdateMode) {
-        return {
-            reply_markup: {
-                keyboard: [
-                    ['🚀 Yangi botga o\'tish', 'ℹ️ Yangiliklar'],
-                    ['❌ Asosiy menyu']
-                ],
-                resize_keyboard: true,
-                one_time_keyboard: false,
-                selective: true
-            }
-        };
-    }
-    
+    // Yangilanish rejimida ham foydalanuvchi o'z ma'lumotlarini ko'rishi kerak
     return {
         reply_markup: {
             keyboard: [
@@ -724,17 +675,10 @@ async function sendMainMenu(chatId, isAdminUser = false) {
                 ...getAdminKeyboard()
             });
         } else {
-            if (isUpdateMode) {
-                await bot.sendMessage(chatId, `⚠️ *YANGILANISH REJIMI - Versiya ${BOT_VERSION}*\n\nBot yangi versiyaga yangilanmoqda.\n\n🔗 ${NEW_BOT_LINK}\n\nIltimos, yangi botga o'ting va /start bosing.`, {
-                    parse_mode: 'Markdown',
-                    ...getUserKeyboard()
-                });
-            } else {
-                await bot.sendMessage(chatId, `🏠 *Asosiy menyu* (Versiya ${BOT_VERSION})\n\n🚗 ISUZU DOCTOR botiga xush kelibsiz!\n\nQuyidagi tugmalardan birini tanlang:`, {
-                    parse_mode: 'Markdown',
-                    ...getUserKeyboard()
-                });
-            }
+            await bot.sendMessage(chatId, `🏠 *Asosiy menyu* (Versiya ${BOT_VERSION})\n\n🚗 ISUZU DOCTOR botiga xush kelibsiz!\n\nQuyidagi tugmalardan birini tanlang:`, {
+                parse_mode: 'Markdown',
+                ...getUserKeyboard()
+            });
         }
     } catch (error) {
         console.error('Menu yuborishda xatolik:', error);
@@ -760,18 +704,8 @@ bot.onText(/\/start/, async (msg) => {
         return;
     }
     
-    if (isUpdateMode) {
-        await bot.sendMessage(chatId, `⚠️ *YANGILANISH REJIMI - Versiya ${BOT_VERSION}*\n\nBot yangi versiyaga yangilanmoqda.\n\n🔗 ${NEW_BOT_LINK}\n\nIltimos, yangi botga o'ting va /start bosing.\n\n📌 Ma'lumotlaringiz avtomatik o'tkaziladi.`, {
-            parse_mode: 'Markdown',
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: '🚀 Yangi botga o\'tish', url: NEW_BOT_LINK }]
-                ]
-            }
-        });
-        return;
-    }
-    
+    // Yangilanish rejimida bo'lsa ham foydalanuvchi o'z ma'lumotlarini ko'rishi kerak
+    // faqat qo'shimcha ravishda yangilanish haqida xabar ko'rsatiladi
     try {
         await sendReminder(chatId);
         
@@ -785,7 +719,13 @@ bot.onText(/\/start/, async (msg) => {
             }
             
             const carsCount = existingUser.cars.length;
-            const welcomeText = `👋 *Xush kelibsiz, ${existingUser.fullName || firstName || 'hurmatli mijoz'}!*\n\n📞 Telefon: ${existingUser.phone}\n🚗 Avtomobillar: ${carsCount} ta\n🎁 Umumiy bonus: ${existingUser.totalBonusCount || 0}\n🎉 Bepul: ${existingUser.totalFreeDiagnostics || 0} ta\n📊 Jami diagnostika: ${existingUser.totalDiagnosticsAll || 0} ta\n📌 Bot versiyasi: ${BOT_VERSION}`;
+            let welcomeText = `👋 *Xush kelibsiz, ${existingUser.fullName || firstName || 'hurmatli mijoz'}!*\n\n📞 Telefon: ${existingUser.phone}\n🚗 Avtomobillar: ${carsCount} ta\n🎁 Umumiy bonus: ${existingUser.totalBonusCount || 0}\n🎉 Bepul: ${existingUser.totalFreeDiagnostics || 0} ta\n📊 Jami diagnostika: ${existingUser.totalDiagnosticsAll || 0} ta\n📌 Bot versiyasi: ${BOT_VERSION}`;
+            
+            // Yangilanish rejimida qo'shimcha xabar
+            if (isUpdateMode) {
+                welcomeText += `\n\n⚠️ *YANGILANISH REJIMI!*\n🔗 Yangi bot: ${NEW_BOT_LINK}\nIltimos, yangi botga o'ting.`;
+            }
+            
             await bot.sendMessage(chatId, welcomeText, { parse_mode: 'Markdown' });
             await sendMainMenu(chatId, existingUser.isAdmin);
         } else {
@@ -801,6 +741,7 @@ bot.onText(/\/start/, async (msg) => {
         }
     } catch (error) {
         console.error('/start xatolik:', error);
+        await bot.sendMessage(chatId, '❌ *Xatolik yuz berdi!* Iltimos, qaytadan /start bosing.', { parse_mode: 'Markdown' });
     }
 });
 
@@ -906,7 +847,13 @@ bot.onText(/\/profile/, async (msg) => {
     
     const carsList = user.cars.map(c => `🚗 ${c.carNumber} (${c.totalDiagnostics} ta diagnostika)`).join('\n');
     await sendReminder(chatId);
-    await bot.sendMessage(chatId, `📊 *MENGING SAHIFAM*\n\n👤 *Ism:* ${user.fullName || 'Kiritilmagan'}\n📞 *Telefon:* ${user.phone}\n🚗 *Avtomobillar:* ${user.cars.length}/${MAX_CARS_PER_USER}\n\n${carsList}\n\n🎁 *Umumiy bonuslar:* ${user.totalBonusCount || 0}\n🎉 *Bepul diagnostika:* ${user.totalFreeDiagnostics || 0} ta\n📊 *Jami diagnostika:* ${user.totalDiagnosticsAll || 0} ta\n📌 *Versiya:* ${BOT_VERSION}`, { parse_mode: 'Markdown' });
+    let profileText = `📊 *MENGING SAHIFAM*\n\n👤 *Ism:* ${user.fullName || 'Kiritilmagan'}\n📞 *Telefon:* ${user.phone}\n🚗 *Avtomobillar:* ${user.cars.length}/${MAX_CARS_PER_USER}\n\n${carsList}\n\n🎁 *Umumiy bonuslar:* ${user.totalBonusCount || 0}\n🎉 *Bepul diagnostika:* ${user.totalFreeDiagnostics || 0} ta\n📊 *Jami diagnostika:* ${user.totalDiagnosticsAll || 0} ta\n📌 *Versiya:* ${BOT_VERSION}`;
+    
+    if (isUpdateMode) {
+        profileText += `\n\n⚠️ *YANGILANISH REJIMI*\n🔗 Yangi bot: ${NEW_BOT_LINK}`;
+    }
+    
+    await bot.sendMessage(chatId, profileText, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/my_cars/, async (msg) => {
@@ -1022,7 +969,13 @@ bot.onText(/\/history/, async (msg) => {
 bot.onText(/\/info/, async (msg) => {
     const chatId = msg.chat.id;
     await sendReminder(chatId);
-    await bot.sendMessage(chatId, `ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 Bitta telefon bilan ${MAX_CARS_PER_USER} tagacha avtomobil\n📞 Aloqa: ${ADMIN_PHONE}\n📌 Bot versiyasi: ${BOT_VERSION}\n🔗 Bot linki: ${NEW_BOT_LINK}`, { parse_mode: 'Markdown' });
+    let infoText = `ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 Bitta telefon bilan ${MAX_CARS_PER_USER} tagacha avtomobil\n📞 Aloqa: ${ADMIN_PHONE}\n📌 Bot versiyasi: ${BOT_VERSION}\n🔗 Bot linki: ${NEW_BOT_LINK}`;
+    
+    if (isUpdateMode) {
+        infoText += `\n\n⚠️ *YANGILANISH REJIMI!*\n🔗 Yangi botga o'ting: ${NEW_BOT_LINK}`;
+    }
+    
+    await bot.sendMessage(chatId, infoText, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/close/, async (msg) => {
@@ -1275,32 +1228,17 @@ bot.on('message', async (msg) => {
         return;
     }
     
-    // Yangilanish rejimida foydalanuvchi menyusi
-    if (isUpdateMode && user && !user.isAdmin) {
-        if (text === '🚀 Yangi botga o\'tish') {
-            await bot.sendMessage(chatId, `🔗 *Yangi botga o'tish* (Versiya ${BOT_VERSION})\n\nIltimos, quyidagi link orqali yangi botga o'ting:\n\n${NEW_BOT_LINK}\n\n/start tugmasini bosing va ma'lumotlaringiz avtomatik yuklanadi.`, {
-                parse_mode: 'Markdown',
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '🚀 Yangi botga o\'tish', url: NEW_BOT_LINK }]
-                    ]
-                }
-            });
-        } else if (text === 'ℹ️ Yangiliklar') {
-            await bot.sendMessage(chatId, UPDATE_MESSAGE, { parse_mode: 'Markdown' });
-        } else if (text === '❌ Asosiy menyu') {
-            clearUserSession(userId);
-            await sendMainMenu(chatId, false);
-        } else {
-            await bot.sendMessage(chatId, `⚠️ *Bot yangilanish rejimida - Versiya ${BOT_VERSION}*\n\nIltimos, yangi botga o'ting.`, { parse_mode: 'Markdown' });
-        }
-        return;
-    }
-    
+    // Foydalanuvchi menyusi tugmalari
     if (text === '📊 Mening sahifam') {
         const carsList = user.cars.map(c => `🚗 ${c.carNumber} (${c.totalDiagnostics} ta diagnostika)`).join('\n');
         await sendReminder(chatId);
-        await bot.sendMessage(chatId, `📊 *MENGING SAHIFAM*\n\n👤 *Ism:* ${user.fullName || 'Kiritilmagan'}\n📞 *Telefon:* ${user.phone}\n🚗 *Avtomobillar:* ${user.cars.length}/${MAX_CARS_PER_USER}\n\n${carsList}\n\n🎁 *Umumiy bonuslar:* ${user.totalBonusCount || 0}\n🎉 *Bepul diagnostika:* ${user.totalFreeDiagnostics || 0} ta\n📊 *Jami diagnostika:* ${user.totalDiagnosticsAll || 0} ta\n📌 *Versiya:* ${BOT_VERSION}`, { parse_mode: 'Markdown' });
+        let profileText = `📊 *MENGING SAHIFAM*\n\n👤 *Ism:* ${user.fullName || 'Kiritilmagan'}\n📞 *Telefon:* ${user.phone}\n🚗 *Avtomobillar:* ${user.cars.length}/${MAX_CARS_PER_USER}\n\n${carsList}\n\n🎁 *Umumiy bonuslar:* ${user.totalBonusCount || 0}\n🎉 *Bepul diagnostika:* ${user.totalFreeDiagnostics || 0} ta\n📊 *Jami diagnostika:* ${user.totalDiagnosticsAll || 0} ta\n📌 *Versiya:* ${BOT_VERSION}`;
+        
+        if (isUpdateMode) {
+            profileText += `\n\n⚠️ *YANGILANISH REJIMI*\n🔗 Yangi bot: ${NEW_BOT_LINK}`;
+        }
+        
+        await bot.sendMessage(chatId, profileText, { parse_mode: 'Markdown' });
     }
     else if (text === '🚗 Mening avtomobillarim') {
         if (user.cars.length === 0) {
@@ -1403,7 +1341,13 @@ bot.on('message', async (msg) => {
     }
     else if (text === 'ℹ️ Ma\'lumot') {
         await sendReminder(chatId);
-        await bot.sendMessage(chatId, `ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 Bitta telefon bilan ${MAX_CARS_PER_USER} tagacha avtomobil\n📞 Aloqa: ${ADMIN_PHONE}\n📌 Bot versiyasi: ${BOT_VERSION}\n🔗 Bot linki: ${NEW_BOT_LINK}`, { parse_mode: 'Markdown' });
+        let infoText = `ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 Bitta telefon bilan ${MAX_CARS_PER_USER} tagacha avtomobil\n📞 Aloqa: ${ADMIN_PHONE}\n📌 Bot versiyasi: ${BOT_VERSION}\n🔗 Bot linki: ${NEW_BOT_LINK}`;
+        
+        if (isUpdateMode) {
+            infoText += `\n\n⚠️ *YANGILANISH REJIMI!*\n🔗 Yangi botga o'ting: ${NEW_BOT_LINK}`;
+        }
+        
+        await bot.sendMessage(chatId, infoText, { parse_mode: 'Markdown' });
     }
     else if (text === '❌ Asosiy menyu') {
         clearUserSession(userId);
@@ -1538,7 +1482,7 @@ bot.on('message', async (msg) => {
         );
     }
     else if (text === '🚀 Yangi versiyaga o\'tish') {
-        await bot.sendMessage(chatId, `⚠️ *YANGI VERSIYAGA O'TISH*\n\nSiz yangi versiyaga o'tmoqchisiz. Bu amal:\n\n1. Barcha foydalanuvchilarga yangilanish haqida xabar yuboriladi\n2. Bot yangilanish rejimiga o'tadi\n3. Foydalanuvchilar faqat yangi botga o'tishlari mumkin\n\n❓ Davom etasizmi?`, {
+        await bot.sendMessage(chatId, `⚠️ *YANGI VERSIYAGA O'TISH*\n\nSiz yangi versiyaga o'tmoqchisiz. Bu amal:\n\n1. Barcha foydalanuvchilarga yangilanish haqida xabar yuboriladi\n2. Bot yangilanish rejimiga o'tadi\n3. Foydalanuvchilarga yangi bot haqida eslatma ko'rsatiladi\n\n❓ Davom etasizmi?`, {
             parse_mode: 'Markdown',
             reply_markup: {
                 inline_keyboard: [
@@ -1576,7 +1520,7 @@ bot.on('callback_query', async (query) => {
             `❌ Yuborilmadi: ${result.fail} ta\n\n` +
             `🔄 Bot yangilanish rejimiga o'tkazildi.\n` +
             `🔗 Yangi bot linki: ${NEW_BOT_LINK}\n\n` +
-            `⚠️ Endi barcha foydalanuvchilar yangi botga o'tishlari kerak.`,
+            `⚠️ Endi foydalanuvchilarga yangi bot haqida eslatma ko'rsatiladi.`,
             { parse_mode: 'Markdown' }
         );
         
