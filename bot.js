@@ -3,24 +3,9 @@ const path = require('path');
 const fs = require('fs');
 
 // -------------------- VERSIYA MA'LUMOTLARI --------------------
-const BOT_VERSION = "1.3.0";
+const BOT_VERSION = "1.0.0";
 const NEW_BOT_LINK = "https://t.me/Isuzu_doctor_bot";
 const INSTAGRAM_LINK = "https://www.instagram.com/isuzu.samarkand";
-const INSTAGRAM_USERNAME = "isuzu.samarkand";
-
-// Instagram bonus xabari (faqat link bilan)
-const INSTAGRAM_BONUS_MESSAGE = `
-📸 *INSTAGRAM OBUNA BONUSI!*
-
-Instagram sahifamizga obuna bo'ling va 1 ta BEPUL diagnostika qozoning!
-
-🎁 *BONUS:* 1 ta BEPUL diagnostika (barcha avtomobillaringizga)
-
-👇 *Instagram sahifamizga o'tish uchun tugmani bosing:*
-
-⚠️ *Eslatma:* Bonus faqat 1 marta beriladi!
-Obuna bo'lgach, admin bilan bog'lanib bonusni oling.
-`;
 
 // -------------------- TOKEN VA ADMIN --------------------
 const BOT_TOKEN = process.env.BOT_TOKEN || '8779251766:AAH12INusgBCawsk5awqIjcyHnNLiq5A33A';
@@ -65,46 +50,6 @@ ensureVolumeDir();
 
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 bot.deleteWebHook().catch(e => console.log('Webhook xatolik:', e.message));
-
-// -------------------- INSTAGRAM BONUS BERISH --------------------
-function giveInstagramBonus(userId) {
-    const user = getUserByUserId(userId);
-    if (!user) return { success: false, message: 'Foydalanuvchi topilmadi!' };
-    
-    if (user.instagramBonusReceived) {
-        return { success: false, message: 'Siz allaqachon Instagram bonusini olgansiz!' };
-    }
-    
-    // Barcha avtomobillarga 1 tadan BEPUL diagnostika qo'shish
-    let bonusCount = 0;
-    for (const car of user.cars) {
-        car.freeDiagnostics += 1;
-        bonusCount++;
-    }
-    
-    user.instagramBonusReceived = true;
-    user.instagramBonusDate = new Date().toISOString();
-    saveUsers();
-    
-    // Adminlarga xabar yuborish
-    for (const adminId of ADMIN_IDS) {
-        bot.sendMessage(adminId, 
-            `✅ *INSTAGRAM BONUS BERILDI!*\n\n` +
-            `👤 Foydalanuvchi: ${user.fullName || user.phone}\n` +
-            `📞 Telefon: ${user.phone}\n` +
-            `🚗 Avtomobillar: ${bonusCount} ta\n` +
-            `🎁 Bonus: ${bonusCount} ta BEPUL diagnostika\n` +
-            `📅 Sana: ${new Date().toLocaleString()}`,
-            { parse_mode: 'Markdown' }
-        ).catch(() => {});
-    }
-    
-    return { 
-        success: true, 
-        message: `✅ Tabriklaymiz! Instagram sahifamizga obuna bo'lganingiz uchun ${bonusCount} ta BEPUL diagnostika qozondingiz! (Har bir avtomobilingizga 1 tadan)`,
-        bonusCount: bonusCount
-    };
-}
 
 // -------------------- VERSIYA BOSHQARISH --------------------
 let currentVersion = BOT_VERSION;
@@ -251,8 +196,6 @@ function loadData() {
             users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
             users.forEach(u => {
                 if (u.isBlocked === undefined) u.isBlocked = false;
-                if (u.instagramBonusReceived === undefined) u.instagramBonusReceived = false;
-                if (u.instagramBonusDate === undefined) u.instagramBonusDate = null;
             });
             saveUsers();
         } else {
@@ -369,8 +312,6 @@ function addNewUser(userId, phoneNumber, carNumber, firstName, lastName, usernam
         isAdmin: false,
         isActive: true,
         isBlocked: false,
-        instagramBonusReceived: false,
-        instagramBonusDate: null,
         registeredDate: new Date().toISOString(),
         cars: [{
             carId: Date.now(),
@@ -525,7 +466,6 @@ function getStatistics() {
     const regularUsers = users.filter(u => !u.isAdmin);
     const blockedUsers = users.filter(u => !u.isAdmin && u.isBlocked === true);
     const activeUsers = regularUsers.filter(u => u.isBlocked !== true);
-    const instagramBonusUsers = users.filter(u => u.instagramBonusReceived === true).length;
     
     let totalCars = 0;
     for (const user of activeUsers) {
@@ -538,7 +478,6 @@ function getStatistics() {
     return {
         totalUsers: activeUsers.length,
         blockedUsers: blockedUsers.length,
-        instagramBonusUsers: instagramBonusUsers,
         totalCars: totalCars,
         totalDiagnostics: diagnostics.length,
         paidDiagnostics: paidDiagnostics.length,
@@ -565,8 +504,7 @@ function getAllUsersWithDetails() {
         cars: u.cars,
         totalDiagnostics: u.totalDiagnosticsAll || 0,
         registeredDate: u.registeredDate,
-        isBlocked: u.isBlocked || false,
-        instagramBonusReceived: u.instagramBonusReceived || false
+        isBlocked: u.isBlocked || false
     }));
 }
 
@@ -577,8 +515,7 @@ function getAdminKeyboard() {
         ['🔧 Diagnostika qo\'shish', '🎁 Bonusga yaqinlar'],
         ['⚠️ Xatoliklar', '📋 Diagnostikalar tarixi'],
         ['📅 Bugungi diagnostikalar', '💾 Backup yaratish'],
-        ['🔄 Database tiklash', '🚫 Foydalanuvchini boshqarish'],
-        ['📸 Instagram bonus', '🎁 Instagram statistika']
+        ['🔄 Database tiklash', '🚫 Foydalanuvchini boshqarish']
     ];
     
     if (!isUpdateMode) {
@@ -600,16 +537,14 @@ function getAdminKeyboard() {
 }
 
 function getUserKeyboard() {
-    const keyboard = [
-        ['📊 Mening sahifam', '🚗 Mening avtomobillarim'],
-        ['🎁 Mening bonuslarim', '➕ Yangi avtomobil qo\'shish'],
-        ['📋 Diagnostika tarixim', '📸 Instagram bonus'],
-        ['ℹ️ Ma\'lumot', '❌ Asosiy menyu']
-    ];
-    
     return {
         reply_markup: {
-            keyboard: keyboard,
+            keyboard: [
+                ['📊 Mening sahifam', '🚗 Mening avtomobillarim'],
+                ['🎁 Mening bonuslarim', '➕ Yangi avtomobil qo\'shish'],
+                ['📋 Diagnostika tarixim', '📸 Bizning Instagram'],
+                ['ℹ️ Ma\'lumot', '❌ Asosiy menyu']
+            ],
             resize_keyboard: true,
             one_time_keyboard: false,
             selective: true,
@@ -760,14 +695,7 @@ bot.onText(/\/start/, async (msg) => {
             }
             
             const carsCount = existingUser.cars.length;
-            let welcomeText = `👋 *Xush kelibsiz, ${existingUser.fullName || firstName || 'hurmatli mijoz'}!*\n\n📞 Telefon: ${existingUser.phone}\n🚗 Avtomobillar: ${carsCount} ta\n🎁 Umumiy bonus: ${existingUser.totalBonusCount || 0}\n🎉 Bepul: ${existingUser.totalFreeDiagnostics || 0} ta\n📊 Jami diagnostika: ${existingUser.totalDiagnosticsAll || 0} ta\n📌 Bot versiyasi: ${BOT_VERSION}`;
-            
-            if (existingUser.instagramBonusReceived) {
-                welcomeText += `\n📸 Instagram bonus: ✅ olingan`;
-            } else {
-                welcomeText += `\n📸 Instagram bonus: ❌ olinmagan (Instagram sahifamizga obuna bo'ling)`;
-            }
-            
+            const welcomeText = `👋 *Xush kelibsiz, ${existingUser.fullName || firstName || 'hurmatli mijoz'}!*\n\n📞 Telefon: ${existingUser.phone}\n🚗 Avtomobillar: ${carsCount} ta\n🎁 Umumiy bonus: ${existingUser.totalBonusCount || 0}\n🎉 Bepul: ${existingUser.totalFreeDiagnostics || 0} ta\n📊 Jami diagnostika: ${existingUser.totalDiagnosticsAll || 0} ta\n📌 Bot versiyasi: ${BOT_VERSION}`;
             await bot.sendMessage(chatId, welcomeText, { parse_mode: 'Markdown' });
             await sendMainMenu(chatId, existingUser.isAdmin);
         } else {
@@ -823,8 +751,6 @@ bot.on('contact', async (msg) => {
             isAdmin: true,
             isActive: true,
             isBlocked: false,
-            instagramBonusReceived: false,
-            instagramBonusDate: null,
             registeredDate: new Date().toISOString(),
             cars: [{
                 carId: Date.now(),
@@ -891,9 +817,7 @@ bot.onText(/\/profile/, async (msg) => {
     
     const carsList = user.cars.map(c => `🚗 ${c.carNumber} (${c.totalDiagnostics} ta diagnostika)`).join('\n');
     await sendReminder(chatId);
-    let profileText = `📊 *MENGING SAHIFAM*\n\n👤 *Ism:* ${user.fullName || 'Kiritilmagan'}\n📞 *Telefon:* ${user.phone}\n🚗 *Avtomobillar:* ${user.cars.length}/${MAX_CARS_PER_USER}\n\n${carsList}\n\n🎁 *Umumiy bonuslar:* ${user.totalBonusCount || 0}\n🎉 *Bepul diagnostika:* ${user.totalFreeDiagnostics || 0} ta\n📊 *Jami diagnostika:* ${user.totalDiagnosticsAll || 0} ta\n📌 *Versiya:* ${BOT_VERSION}\n📸 *Instagram bonus:* ${user.instagramBonusReceived ? '✅ olingan' : '❌ olinmagan'}`;
-    
-    await bot.sendMessage(chatId, profileText, { parse_mode: 'Markdown' });
+    await bot.sendMessage(chatId, `📊 *MENGING SAHIFAM*\n\n👤 *Ism:* ${user.fullName || 'Kiritilmagan'}\n📞 *Telefon:* ${user.phone}\n🚗 *Avtomobillar:* ${user.cars.length}/${MAX_CARS_PER_USER}\n\n${carsList}\n\n🎁 *Umumiy bonuslar:* ${user.totalBonusCount || 0}\n🎉 *Bepul diagnostika:* ${user.totalFreeDiagnostics || 0} ta\n📊 *Jami diagnostika:* ${user.totalDiagnosticsAll || 0} ta\n📌 *Versiya:* ${BOT_VERSION}`, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/my_cars/, async (msg) => {
@@ -962,16 +886,7 @@ bot.onText(/\/my_bonus/, async (msg) => {
         
         bonusText += `━━━━━━━━━━━━━━━━━━\n`;
     }
-    
-    if (!user.instagramBonusReceived) {
-        bonusText += `\n📸 *INSTAGRAM BONUS!*\n`;
-        bonusText += `Instagram sahifamizga obuna bo'ling va 1 ta BEPUL diagnostika oling!\n`;
-        bonusText += `👇 Instagramga o'tish uchun "📸 Instagram bonus" tugmasini bosing\n`;
-    } else {
-        bonusText += `\n✅ *Instagram bonusi olingan!*`;
-    }
-    
-    bonusText += `\n\n🎯 *QANDAY ISHLAYDI?*\n`;
+    bonusText += `\n🎯 *QANDAY ISHLAYDI?*\n`;
     bonusText += `• Har 5 ta to'lovli diagnostika = 1 ta BEPUL\n`;
     bonusText += `• Har bir avtomobil uchun bonus alohida hisoblanadi\n`;
     bonusText += `• Bepul diagnostika cheksiz muddatga amal qiladi\n`;
@@ -1018,9 +933,7 @@ bot.onText(/\/history/, async (msg) => {
 bot.onText(/\/info/, async (msg) => {
     const chatId = msg.chat.id;
     await sendReminder(chatId);
-    let infoText = `ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 Bitta telefon bilan ${MAX_CARS_PER_USER} tagacha avtomobil\n📞 Aloqa: ${ADMIN_PHONE}\n📌 Bot versiyasi: ${BOT_VERSION}\n🔗 Bot linki: ${NEW_BOT_LINK}\n📸 Instagram: ${INSTAGRAM_LINK}`;
-    
-    await bot.sendMessage(chatId, infoText, { parse_mode: 'Markdown' });
+    await bot.sendMessage(chatId, `ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 Bitta telefon bilan ${MAX_CARS_PER_USER} tagacha avtomobil\n📞 Aloqa: ${ADMIN_PHONE}\n📌 Bot versiyasi: ${BOT_VERSION}\n🔗 Bot linki: ${NEW_BOT_LINK}\n📸 Instagram: ${INSTAGRAM_LINK}`, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/close/, async (msg) => {
@@ -1036,21 +949,7 @@ bot.onText(/\/statistika/, async (msg) => {
     if (!isAdmin(userId)) return;
     
     const stats = getStatistics();
-    await bot.sendMessage(chatId, 
-        `📊 *STATISTIKA*\n\n` +
-        `👥 Faol foydalanuvchilar: ${stats.totalUsers}\n` +
-        `🚫 Bloklanganlar: ${stats.blockedUsers}\n` +
-        `📸 Instagram bonus olganlar: ${stats.instagramBonusUsers}\n` +
-        `🚗 Avtomobillar: ${stats.totalCars}\n` +
-        `🔧 Jami diagnostika: ${stats.totalDiagnostics}\n` +
-        `💰 To'lovli: ${stats.paidDiagnostics}\n` +
-        `🎉 Bepul: ${stats.freeDiagnostics}\n` +
-        `💵 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n` +
-        `⚠️ Xatoliklar: ${stats.totalErrors}\n` +
-        `📌 Versiya: ${stats.currentVersion}\n` +
-        `🔄 Yangilanish rejimi: ${stats.isUpdateMode ? '✅ Faol' : '❌ O\'chirilgan'}`,
-        { parse_mode: 'Markdown' }
-    );
+    await bot.sendMessage(chatId, `📊 *STATISTIKA*\n\n👥 Faol foydalanuvchilar: ${stats.totalUsers}\n🚫 Bloklanganlar: ${stats.blockedUsers}\n🚗 Avtomobillar: ${stats.totalCars}\n🔧 Jami: ${stats.totalDiagnostics}\n💰 To'lovli: ${stats.paidDiagnostics}\n🎉 Bepul: ${stats.freeDiagnostics}\n💵 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n⚠️ Xatoliklar: ${stats.totalErrors}\n📌 Versiya: ${stats.currentVersion}\n🔄 Yangilanish rejimi: ${stats.isUpdateMode ? '✅ Faol' : '❌ O\'chirilgan'}`, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/users/, async (msg) => {
@@ -1067,8 +966,7 @@ bot.onText(/\/users/, async (msg) => {
     let msgText = '👥 *FOYDALANUVCHILAR*\n━━━━━━━━━━━━━━━━━━\n\n';
     usersList.slice(0, 15).forEach((u, index) => { 
         const status = u.isBlocked ? '🔴' : '🟢';
-        const igBonus = u.instagramBonusReceived ? '📸✅' : '📸❌';
-        msgText += `${status} ${igBonus} *${index + 1}. ${u.fullName || 'Ism kiritilmagan'}*\n`;
+        msgText += `${status} *${index + 1}. ${u.fullName || 'Ism kiritilmagan'}*\n`;
         msgText += `📞 ${u.phone}\n`;
         msgText += `🚗 ${u.cars.map(c => c.carNumber).join(', ')}\n`;
         msgText += `📊 ${u.totalDiagnostics} ta diagnostika\n`;
@@ -1122,7 +1020,7 @@ bot.on('message', async (msg) => {
         
         try {
             await sendReminder(chatId);
-            await bot.sendMessage(chatId, `✅ *Siz muvaffaqiyatli ro'yxatdan o'tdingiz, ${userFullName || 'hurmatli mijoz'}!*\n\n👤 Ism: ${userFullName || 'Kiritilmagan'}\n🚗 Avtomobil: ${carNumber}\n📞 Telefon: ${session.data.phone}\n\n🎁 *Bonus tizimi:* Har 5 diagnostikada 1 ta BEPUL!\n📸 *Instagram:* Sahifamizga obuna bo'ling va 1 ta BEPUL diagnostika oling!\n\n➕ "➕ Yangi avtomobil qo'shish" tugmasi orqali yana avtomobil qo'shishingiz mumkin.\n📌 Bot versiyasi: ${BOT_VERSION}`, { parse_mode: 'Markdown' });
+            await bot.sendMessage(chatId, `✅ *Siz muvaffaqiyatli ro'yxatdan o'tdingiz, ${userFullName || 'hurmatli mijoz'}!*\n\n👤 Ism: ${userFullName || 'Kiritilmagan'}\n🚗 Avtomobil: ${carNumber}\n📞 Telefon: ${session.data.phone}\n\n🎁 *Bonus tizimi:* Har 5 diagnostikada 1 ta BEPUL!\n📸 *Instagram:* Bizni kuzatib boring: ${INSTAGRAM_LINK}\n\n➕ "➕ Yangi avtomobil qo'shish" tugmasi orqali yana avtomobil qo'shishingiz mumkin.\n📌 Bot versiyasi: ${BOT_VERSION}`, { parse_mode: 'Markdown' });
             await sendMainMenu(chatId, false);
             
             for (const adminId of ADMIN_IDS) {
@@ -1189,7 +1087,7 @@ bot.on('message', async (msg) => {
         session.data.targetCar = foundCar;
         session.step = 'admin_work_description';
         
-        await bot.sendMessage(chatId, `✅ Foydalanuvchi topildi:\n\n👤 ${foundUser.fullName || 'Ism kiritilmagan'}\n📞 ${foundUser.phone}\n🚗 ${foundCar.carNumber}\n🎁 Bonus: ${foundCar.bonusCount}/5\n🎉 Bepul: ${foundCar.freeDiagnostics}\n📸 Instagram bonus: ${foundUser.instagramBonusReceived ? '✅ olingan' : '❌ olinmagan'}\n\n🔧 *Bajarilgan ishlarni kiriting:*`, { parse_mode: 'Markdown' });
+        await bot.sendMessage(chatId, `✅ Foydalanuvchi topildi:\n\n👤 ${foundUser.fullName || 'Ism kiritilmagan'}\n📞 ${foundUser.phone}\n🚗 ${foundCar.carNumber}\n🎁 Bonus: ${foundCar.bonusCount}/5\n🎉 Bepul: ${foundCar.freeDiagnostics}\n\n🔧 *Bajarilgan ishlarni kiriting:*`, { parse_mode: 'Markdown' });
         return;
     }
     
@@ -1292,9 +1190,7 @@ bot.on('message', async (msg) => {
     if (text === '📊 Mening sahifam') {
         const carsList = user.cars.map(c => `🚗 ${c.carNumber} (${c.totalDiagnostics} ta diagnostika)`).join('\n');
         await sendReminder(chatId);
-        let profileText = `📊 *MENGING SAHIFAM*\n\n👤 *Ism:* ${user.fullName || 'Kiritilmagan'}\n📞 *Telefon:* ${user.phone}\n🚗 *Avtomobillar:* ${user.cars.length}/${MAX_CARS_PER_USER}\n\n${carsList}\n\n🎁 *Umumiy bonuslar:* ${user.totalBonusCount || 0}\n🎉 *Bepul diagnostika:* ${user.totalFreeDiagnostics || 0} ta\n📊 *Jami diagnostika:* ${user.totalDiagnosticsAll || 0} ta\n📌 *Versiya:* ${BOT_VERSION}\n📸 *Instagram bonus:* ${user.instagramBonusReceived ? '✅ olingan' : '❌ olinmagan'}`;
-        
-        await bot.sendMessage(chatId, profileText, { parse_mode: 'Markdown' });
+        await bot.sendMessage(chatId, `📊 *MENGING SAHIFAM*\n\n👤 *Ism:* ${user.fullName || 'Kiritilmagan'}\n📞 *Telefon:* ${user.phone}\n🚗 *Avtomobillar:* ${user.cars.length}/${MAX_CARS_PER_USER}\n\n${carsList}\n\n🎁 *Umumiy bonuslar:* ${user.totalBonusCount || 0}\n🎉 *Bepul diagnostika:* ${user.totalFreeDiagnostics || 0} ta\n📊 *Jami diagnostika:* ${user.totalDiagnosticsAll || 0} ta\n📌 *Versiya:* ${BOT_VERSION}`, { parse_mode: 'Markdown' });
     }
     else if (text === '🚗 Mening avtomobillarim') {
         if (user.cars.length === 0) {
@@ -1362,16 +1258,7 @@ bot.on('message', async (msg) => {
             
             bonusText += `━━━━━━━━━━━━━━━━━━\n`;
         }
-        
-        if (!user.instagramBonusReceived) {
-            bonusText += `\n📸 *INSTAGRAM BONUS!*\n`;
-            bonusText += `Instagram sahifamizga obuna bo'ling va 1 ta BEPUL diagnostika oling!\n`;
-            bonusText += `👇 Instagramga o'tish uchun "📸 Instagram bonus" tugmasini bosing\n`;
-        } else {
-            bonusText += `\n✅ *Instagram bonusi olingan!*`;
-        }
-        
-        bonusText += `\n\n🎯 *QANDAY ISHLAYDI?*\n`;
+        bonusText += `\n🎯 *QANDAY ISHLAYDI?*\n`;
         bonusText += `• Har 5 ta to'lovli diagnostika = 1 ta BEPUL\n`;
         bonusText += `• Har bir avtomobil uchun bonus alohida hisoblanadi\n`;
         bonusText += `• Bepul diagnostika cheksiz muddatga amal qiladi\n`;
@@ -1404,36 +1291,23 @@ bot.on('message', async (msg) => {
             await bot.sendMessage(chatId, diagText, { parse_mode: 'Markdown' });
         }
     }
-    else if (text === '📸 Instagram bonus') {
-        if (user.instagramBonusReceived) {
-            await bot.sendMessage(chatId, 
-                `✅ *Siz Instagram bonusini allaqachon olgansiz!*\n\n` +
-                `📸 Instagram: ${INSTAGRAM_LINK}\n\n` +
-                `Agar sizga yoqsa, do'stlaringizga ham tavsiya qiling!`,
-                { parse_mode: 'Markdown' }
-            );
-        } else {
-            // Instagram sahifasiga o'tish uchun tugma
-            const keyboard = {
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: '📸 Instagram sahifasiga o\'tish', url: INSTAGRAM_LINK }],
-                        [{ text: '✅ Obuna bo\'ldim, bonus olish', callback_data: `get_instagram_bonus` }]
-                    ]
-                }
-            };
-            
-            await bot.sendMessage(chatId, INSTAGRAM_BONUS_MESSAGE, {
-                parse_mode: 'Markdown',
-                ...keyboard
-            });
-        }
+    else if (text === '📸 Bizning Instagram') {
+        const instagramKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '📸 Instagram sahifamizga o\'tish', url: INSTAGRAM_LINK }]
+                ]
+            }
+        };
+        
+        await bot.sendMessage(chatId, `📸 *BIZNING INSTAGRAM*\n\nBizni Instagram sahifamizda kuzatib boring:\n\n🔗 ${INSTAGRAM_LINK}\n\n🚗 Avtomobil yangiliklari, aksiyalar va foydali maslahatlar uchun bizni kuzating!`, {
+            parse_mode: 'Markdown',
+            ...instagramKeyboard
+        });
     }
     else if (text === 'ℹ️ Ma\'lumot') {
         await sendReminder(chatId);
-        let infoText = `ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 Bitta telefon bilan ${MAX_CARS_PER_USER} tagacha avtomobil\n📞 Aloqa: ${ADMIN_PHONE}\n📌 Bot versiyasi: ${BOT_VERSION}\n🔗 Bot linki: ${NEW_BOT_LINK}\n📸 Instagram: ${INSTAGRAM_LINK}`;
-        
-        await bot.sendMessage(chatId, infoText, { parse_mode: 'Markdown' });
+        await bot.sendMessage(chatId, `ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 Bitta telefon bilan ${MAX_CARS_PER_USER} tagacha avtomobil\n📞 Aloqa: ${ADMIN_PHONE}\n📌 Bot versiyasi: ${BOT_VERSION}\n🔗 Bot linki: ${NEW_BOT_LINK}\n📸 Instagram: ${INSTAGRAM_LINK}`, { parse_mode: 'Markdown' });
     }
     else if (text === '❌ Asosiy menyu') {
         clearUserSession(userId);
@@ -1454,21 +1328,7 @@ bot.on('message', async (msg) => {
     
     if (text === '📊 Statistika') {
         const stats = getStatistics();
-        await bot.sendMessage(chatId, 
-            `📊 *STATISTIKA*\n\n` +
-            `👥 Faol foydalanuvchilar: ${stats.totalUsers}\n` +
-            `🚫 Bloklanganlar: ${stats.blockedUsers}\n` +
-            `📸 Instagram bonus olganlar: ${stats.instagramBonusUsers}\n` +
-            `🚗 Avtomobillar: ${stats.totalCars}\n` +
-            `🔧 Jami: ${stats.totalDiagnostics}\n` +
-            `💰 To'lovli: ${stats.paidDiagnostics}\n` +
-            `🎉 Bepul: ${stats.freeDiagnostics}\n` +
-            `💵 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n` +
-            `⚠️ Xatoliklar: ${stats.totalErrors}\n` +
-            `📌 Versiya: ${stats.currentVersion}\n` +
-            `🔄 Yangilanish rejimi: ${stats.isUpdateMode ? '✅ Faol' : '❌ O\'chirilgan'}`,
-            { parse_mode: 'Markdown' }
-        );
+        await bot.sendMessage(chatId, `📊 *STATISTIKA*\n\n👥 Faol foydalanuvchilar: ${stats.totalUsers}\n🚫 Bloklanganlar: ${stats.blockedUsers}\n🚗 Avtomobillar: ${stats.totalCars}\n🔧 Jami: ${stats.totalDiagnostics}\n💰 To'lovli: ${stats.paidDiagnostics}\n🎉 Bepul: ${stats.freeDiagnostics}\n💵 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n⚠️ Xatoliklar: ${stats.totalErrors}\n📌 Versiya: ${stats.currentVersion}\n🔄 Yangilanish rejimi: ${stats.isUpdateMode ? '✅ Faol' : '❌ O\'chirilgan'}`, { parse_mode: 'Markdown' });
     }
     else if (text === '👥 Foydalanuvchilar') {
         const usersList = getAllUsersWithDetails();
@@ -1480,8 +1340,7 @@ bot.on('message', async (msg) => {
         let msg = '👥 *FOYDALANUVCHILAR RO\'YXATI*\n━━━━━━━━━━━━━━━━━━\n\n';
         usersList.slice(0, 20).forEach((u, index) => { 
             const status = u.isBlocked ? '🔴' : '🟢';
-            const igBonus = u.instagramBonusReceived ? '📸✅' : '📸❌';
-            msg += `${status} ${igBonus} *${index + 1}. ${u.fullName || 'Ism kiritilmagan'}*\n`;
+            msg += `${status} *${index + 1}. ${u.fullName || 'Ism kiritilmagan'}*\n`;
             msg += `📞 ${u.phone}\n`;
             msg += `🚗 Avtomobillar:\n`;
             u.cars.forEach(car => {
@@ -1582,42 +1441,6 @@ bot.on('message', async (msg) => {
             }
         );
     }
-    else if (text === '📸 Instagram bonus') {
-        const usersWithBonus = users.filter(u => u.instagramBonusReceived === true);
-        const pendingUsers = users.filter(u => !u.instagramBonusReceived && !u.isAdmin);
-        
-        await bot.sendMessage(chatId, 
-            `📸 *INSTAGRAM BONUS STATISTIKASI*\n\n` +
-            `✅ Bonus olganlar: ${usersWithBonus.length} ta\n` +
-            `⏳ Bonus olmaganlar: ${pendingUsers.length} ta\n\n` +
-            `🔗 Instagram: ${INSTAGRAM_LINK}\n\n` +
-            `📌 Qanday ishlaydi:\n` +
-            `1. Foydalanuvchi "📸 Instagram bonus" tugmasini bosadi\n` +
-            `2. Instagram sahifasiga o'tadi\n` +
-            `3. Obuna bo'ladi\n` +
-            `4. "Obuna bo'ldim, bonus olish" tugmasini bosadi\n` +
-            `5. Admin tekshirib bonus beradi\n\n` +
-            `⚠️ Har bir foydalanuvchi faqat 1 marta bonus olishi mumkin!`,
-            { parse_mode: 'Markdown' }
-        );
-    }
-    else if (text === '🎁 Instagram statistika') {
-        const usersWithBonus = users.filter(u => u.instagramBonusReceived === true);
-        let msg = '📸 *INSTAGRAM BONUS OLGANLAR*\n━━━━━━━━━━━━━━━━━━\n\n';
-        
-        if (usersWithBonus.length === 0) {
-            msg += 'Hech kim Instagram bonusini olmagan.';
-        } else {
-            usersWithBonus.slice(0, 20).forEach((u, index) => {
-                msg += `${index + 1}. ${u.fullName || u.phone}\n`;
-                msg += `📞 ${u.phone}\n`;
-                msg += `📅 ${new Date(u.instagramBonusDate).toLocaleDateString()}\n`;
-                msg += `━━━━━━━━━━━━━━━━━━\n`;
-            });
-        }
-        
-        await bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
-    }
     else if (text === '🚀 Yangi versiyaga o\'tish') {
         await bot.sendMessage(chatId, `⚠️ *YANGI VERSIYAGA O'TISH*\n\nSiz yangi versiyaga o'tmoqchisiz. Bu amal:\n\n1. Barcha foydalanuvchilarga yangilanish haqida xabar yuboriladi\n2. Bot yangilanish rejimiga o'tadi\n3. Foydalanuvchilarga yangi bot haqida eslatma ko'rsatiladi\n\n❓ Davom etasizmi?`, {
             parse_mode: 'Markdown',
@@ -1642,49 +1465,6 @@ bot.on('callback_query', async (query) => {
     const data = query.data;
     const messageId = query.message.message_id;
     
-    // Instagram bonus olish
-    if (data === 'get_instagram_bonus') {
-        const userId = query.from.id;
-        const user = getUserByUserId(userId);
-        
-        if (!user) {
-            await bot.answerCallbackQuery(query.id, { text: 'Foydalanuvchi topilmadi!', show_alert: true });
-            return;
-        }
-        
-        if (user.instagramBonusReceived) {
-            await bot.answerCallbackQuery(query.id, { text: 'Siz allaqachon bonus olgansiz!', show_alert: true });
-            await bot.deleteMessage(chatId, messageId);
-            return;
-        }
-        
-        // Adminlarga xabar yuborish
-        for (const adminId of ADMIN_IDS) {
-            bot.sendMessage(adminId, 
-                `📸 *YANGI INSTAGRAM BONUS SO'ROVI!*\n\n` +
-                `👤 Foydalanuvchi: ${user.fullName || user.phone}\n` +
-                `📞 Telefon: ${user.phone}\n` +
-                `🆔 ID: ${userId}\n` +
-                `📅 Sana: ${new Date().toLocaleString()}\n\n` +
-                `Foydalanuvchi Instagram sahifamizga obuna bo'lganini tekshiring.\n` +
-                `✅ Bonus berish uchun: /give_instagram_bonus ${userId}`,
-                { parse_mode: 'Markdown' }
-            ).catch(() => {});
-        }
-        
-        await bot.answerCallbackQuery(query.id, { text: 'So\'rovingiz adminga yuborildi! Admin tekshirib bonus beradi.', show_alert: true });
-        await bot.deleteMessage(chatId, messageId);
-        
-        await bot.sendMessage(chatId, 
-            `✅ *So'rovingiz qabul qilindi!*\n\n` +
-            `Admin ${INSTAGRAM_USERNAME} sahifasiga obuna bo'lganingizni tekshirib, bonusni beradi.\n\n` +
-            `📞 Tezroq tasdiqlash uchun admin bilan bog'laning: ${ADMIN_PHONE}`,
-            { parse_mode: 'Markdown' }
-        );
-        return;
-    }
-    
-    // Admin uchun Instagram bonus berish
     if (data === 'confirm_update') {
         await bot.answerCallbackQuery(query.id);
         await bot.sendMessage(chatId, '📢 *Yangilanish boshlandi...*\n\nBarcha foydalanuvchilarga xabar yuborilmoqda...', { parse_mode: 'Markdown' });
@@ -1787,7 +1567,6 @@ bot.on('callback_query', async (query) => {
             `📊 Diagnostika: ${user.totalDiagnosticsAll || 0} ta\n` +
             `🎁 Bonus: ${user.totalBonusCount || 0}\n` +
             `🎉 Bepul: ${user.totalFreeDiagnostics || 0}\n` +
-            `📸 Instagram bonus: ${user.instagramBonusReceived ? '✅ olingan' : '❌ olinmagan'}\n` +
             `📅 Ro'yxatdan: ${new Date(user.registeredDate).toLocaleDateString()}\n` +
             `🚦 Holat: ${user.isBlocked ? '🔴 BLOKLANGAN' : '🟢 FAOL'}\n\n` +
             `📌 Quyidagi amallardan birini tanlang:`;
@@ -1916,19 +1695,6 @@ bot.on('callback_query', async (query) => {
     }
 });
 
-// -------------------- ADMIN BUYRUQLARI --------------------
-bot.onText(/\/give_instagram_bonus (.+)/, async (msg, match) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    
-    if (!isAdmin(userId)) return;
-    
-    const targetUserId = parseInt(match[1]);
-    const result = giveInstagramBonus(targetUserId);
-    
-    await bot.sendMessage(chatId, result.message, { parse_mode: 'Markdown' });
-});
-
 // -------------------- XATOLIKLARNI QAYTA ISHLASH --------------------
 bot.on('polling_error', (error) => console.error('Polling xatolik:', error));
 process.on('uncaughtException', (error) => console.error('Uncaught exception:', error));
@@ -1951,7 +1717,6 @@ console.log(`👑 Admin telefon: ${ADMIN_PHONE}`);
 console.log(`💰 Diagnostika narxi: ${DIAGNOSTIC_PRICE.toLocaleString()} so'm`);
 console.log(`👥 Faol foydalanuvchilar: ${users.filter(u => !u.isAdmin && !u.isBlocked).length}`);
 console.log(`🚫 Bloklanganlar: ${users.filter(u => !u.isAdmin && u.isBlocked).length}`);
-console.log(`📸 Instagram bonus olganlar: ${users.filter(u => u.instagramBonusReceived === true).length}`);
 console.log(`🚗 Avtomobillar: ${users.reduce((sum, u) => sum + (u.cars ? u.cars.length : 0), 0)}`);
 console.log(`🔧 Diagnostikalar: ${diagnostics.length}`);
 console.log(`💾 Volume manzili: ${VOLUME_PATH}`);
