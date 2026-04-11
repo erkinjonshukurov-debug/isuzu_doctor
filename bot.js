@@ -1,17 +1,28 @@
 const TelegramBot = require('node-telegram-bot-api');
 const path = require('path');
 const fs = require('fs');
+const PDFDocument = require('pdfkit');
 
 // -------------------- VERSIYA MA'LUMOTLARI --------------------
 const BOT_VERSION = "1.0.0";
 const NEW_BOT_LINK = "https://t.me/Isuzu_doctor_bot";
 const INSTAGRAM_LINK = "https://www.instagram.com/isuzu.samarkand";
+const TELEGRAM_GROUP_LINK = "https://t.me/c/1470622234/1008";
 
-// -------------------- TOKEN VA ADMIN --------------------
+// -------------------- XAVFSIZLIK VA ADMIN --------------------
 const BOT_TOKEN = process.env.BOT_TOKEN || '8779251766:AAH12INusgBCawsk5awqIjcyHnNLiq5A33A';
 
 const ADMIN_PHONE = "+998979247888";
-const ADMIN_IDS = [1437230485];
+const ADMIN_IDS = [1437230485]; // Ruxsat berilgan admin ID lari
+const SUPER_ADMIN_ID = 1437230485; // Super admin (boshqa adminlarni boshqarishi mumkin)
+
+// Admin sozlamalari
+let adminSettings = {
+    allowedEditors: [], // Kodni o'zgartirishga ruxsat berilgan adminlar
+    lastChanges: [],
+    securityLog: []
+};
+
 const DIAGNOSTIC_PRICE = 250000;
 const MAX_CARS_PER_USER = 20;
 
@@ -29,11 +40,13 @@ Agar avtomobilingiz doimo soz, ishonchli va yo‘llarda sizni yarim yo‘lda qol
 // -------------------- RAILWAY VOLUME YO'LLARI --------------------
 const VOLUME_PATH = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, 'data');
 const BACKUP_DIR = path.join(VOLUME_PATH, 'backups');
+const REPORTS_DIR = path.join(VOLUME_PATH, 'reports');
 
 const USERS_FILE = path.join(VOLUME_PATH, 'users.json');
 const DIAGNOSTICS_FILE = path.join(VOLUME_PATH, 'diagnostics.json');
 const ERRORS_FILE = path.join(VOLUME_PATH, 'errors.json');
 const VERSION_FILE = path.join(VOLUME_PATH, 'version.json');
+const ADMIN_SETTINGS_FILE = path.join(VOLUME_PATH, 'admin_settings.json');
 
 function ensureVolumeDir() {
     if (!fs.existsSync(VOLUME_PATH)) {
@@ -44,12 +57,175 @@ function ensureVolumeDir() {
         fs.mkdirSync(BACKUP_DIR, { recursive: true });
         console.log(`✅ Backup papkasi yaratildi: ${BACKUP_DIR}`);
     }
+    if (!fs.existsSync(REPORTS_DIR)) {
+        fs.mkdirSync(REPORTS_DIR, { recursive: true });
+        console.log(`✅ Hisobot papkasi yaratildi: ${REPORTS_DIR}`);
+    }
 }
 
 ensureVolumeDir();
 
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 bot.deleteWebHook().catch(e => console.log('Webhook xatolik:', e.message));
+
+// -------------------- XAVFSIZLIK FUNKSIYALARI --------------------
+function loadAdminSettings() {
+    try {
+        if (fs.existsSync(ADMIN_SETTINGS_FILE)) {
+            adminSettings = JSON.parse(fs.readFileSync(ADMIN_SETTINGS_FILE, 'utf8'));
+        } else {
+            saveAdminSettings();
+        }
+    } catch (err) {
+        console.error('Admin sozlamalarini yuklashda xatolik:', err);
+        adminSettings = { allowedEditors: [], lastChanges: [], securityLog: [] };
+    }
+}
+
+function saveAdminSettings() {
+    fs.writeFileSync(ADMIN_SETTINGS_FILE, JSON.stringify(adminSettings, null, 2));
+}
+
+function isSuperAdmin(userId) {
+    return userId === SUPER_ADMIN_ID;
+}
+
+function canEditCode(userId) {
+    return isSuperAdmin(userId) || adminSettings.allowedEditors.includes(userId);
+}
+
+function addSecurityLog(action, userId, details) {
+    const log = {
+        id: Date.now(),
+        action: action,
+        userId: userId,
+        details: details,
+        date: new Date().toISOString()
+    };
+    adminSettings.securityLog.unshift(log);
+    if (adminSettings.securityLog.length > 100) {
+        adminSettings.securityLog = adminSettings.securityLog.slice(0, 100);
+    }
+    saveAdminSettings();
+}
+
+function grantEditPermission(adminId, targetUserId) {
+    if (!isSuperAdmin(adminId)) {
+        return { success: false, message: 'Faqat Super Admin ruxsat bera oladi!' };
+    }
+    
+    if (adminSettings.allowedEditors.includes(targetUserId)) {
+        return { success: false, message: 'Bu admin allaqachon ruxsatga ega!' };
+    }
+    
+    adminSettings.allowedEditors.push(targetUserId);
+    saveAdminSettings();
+    addSecurityLog('GRANT_EDIT_PERMISSION', adminId, `Admin ${targetUserId} ga ruxsat berildi`);
+    
+    return { success: true, message: 'Ruxsat muvaffaqiyatli berildi!' };
+}
+
+function revokeEditPermission(adminId, targetUserId) {
+    if (!isSuperAdmin(adminId)) {
+        return { success: false, message: 'Faqat Super Admin ruxsatni olib qo\'yishi mumkin!' };
+    }
+    
+    const index = adminSettings.allowedEditors.indexOf(targetUserId);
+    if (index === -1) {
+        return { success: false, message: 'Bu admin ruxsatga ega emas!' };
+    }
+    
+    adminSettings.allowedEditors.splice(index, 1);
+    saveAdminSettings();
+    addSecurityLog('REVOKE_EDIT_PERMISSION', adminId, `Admin ${targetUserId} dan ruxsat olindi`);
+    
+    return { success: true, message: 'Ruxsat muvaffaqiyatli olib qo\'yildi!' };
+}
+
+// -------------------- PDF HISOBOT FUNKSIYALARI --------------------
+async function generateDiagnosticsPDF(diagnosticsList, period = 'all') {
+    return new Promise((resolve, reject) => {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        const filename = `diagnostics_report_${timestamp}.pdf`;
+        const filepath = path.join(REPORTS_DIR, filename);
+        
+        const doc = new PDFDocument({ margin: 50, size: 'A4' });
+        const stream = fs.createWriteStream(filepath);
+        
+        doc.pipe(stream);
+        
+        // Header
+        doc.fontSize(20).font('Helvetica-Bold').text('DIAGNOSTIKA HISOBOTI', { align: 'center' });
+        doc.moveDown();
+        doc.fontSize(12).font('Helvetica');
+        doc.text(`Yaratilgan sana: ${new Date().toLocaleString()}`, { align: 'center' });
+        doc.text(`Jami diagnostikalar: ${diagnosticsList.length} ta`, { align: 'center' });
+        doc.moveDown();
+        
+        // Statistika
+        const paidCount = diagnosticsList.filter(d => !d.isFree).length;
+        const freeCount = diagnosticsList.filter(d => d.isFree).length;
+        const totalIncome = diagnosticsList.filter(d => !d.isFree).reduce((sum, d) => sum + d.price, 0);
+        
+        doc.fontSize(14).font('Helvetica-Bold').text('STATISTIKA', { underline: true });
+        doc.moveDown(0.5);
+        doc.fontSize(12).font('Helvetica');
+        doc.text(`💰 To\'lovli diagnostikalar: ${paidCount} ta`);
+        doc.text(`🎉 Bepul diagnostikalar: ${freeCount} ta`);
+        doc.text(`💵 Umumiy daromad: ${totalIncome.toLocaleString()} so'm`);
+        doc.moveDown();
+        
+        // Diagnostikalar jadvali
+        doc.fontSize(14).font('Helvetica-Bold').text('DIAGNOSTIKALAR RO\'YXATI', { underline: true });
+        doc.moveDown(0.5);
+        
+        // Jadval sarlavhalari
+        const startX = 50;
+        let y = doc.y;
+        
+        doc.fontSize(10).font('Helvetica-Bold');
+        doc.text('#', startX, y);
+        doc.text('Sana', startX + 30, y);
+        doc.text('Avtomobil', startX + 100, y);
+        doc.text('Bajarilgan ishlar', startX + 170, y);
+        doc.text('Narx', startX + 350, y);
+        
+        y += 20;
+        doc.moveTo(startX, y - 5).lineTo(startX + 550, y - 5).stroke();
+        
+        doc.fontSize(9).font('Helvetica');
+        let i = 1;
+        
+        for (const diag of diagnosticsList.slice(0, 50)) { // Oxirgi 50 ta
+            if (y > 700) {
+                doc.addPage();
+                y = 50;
+            }
+            
+            const date = new Date(diag.date).toLocaleDateString();
+            const carNumber = diag.carNumber;
+            const workDesc = diag.workDescription.substring(0, 30) + (diag.workDescription.length > 30 ? '...' : '');
+            const price = diag.isFree ? 'BEPUL' : diag.price.toLocaleString() + ' so\'m';
+            
+            doc.text(i.toString(), startX, y);
+            doc.text(date, startX + 30, y);
+            doc.text(carNumber, startX + 100, y);
+            doc.text(workDesc, startX + 170, y);
+            doc.text(price, startX + 350, y);
+            
+            y += 20;
+            i++;
+        }
+        
+        doc.end();
+        
+        stream.on('finish', () => {
+            resolve(filepath);
+        });
+        
+        stream.on('error', reject);
+    });
+}
 
 // -------------------- VERSIYA BOSHQARISH --------------------
 let currentVersion = BOT_VERSION;
@@ -514,8 +690,9 @@ function getAdminKeyboard() {
         ['📊 Statistika', '👥 Foydalanuvchilar'],
         ['🔧 Diagnostika qo\'shish', '🎁 Bonusga yaqinlar'],
         ['⚠️ Xatoliklar', '📋 Diagnostikalar tarixi'],
-        ['📅 Bugungi diagnostikalar', '💾 Backup yaratish'],
-        ['🔄 Database tiklash', '🚫 Foydalanuvchini boshqarish']
+        ['📅 Bugungi diagnostikalar', '📄 PDF Hisobot'],
+        ['💾 Backup yaratish', '🔄 Database tiklash'],
+        ['🚫 Foydalanuvchini boshqarish', '🔐 Xavfsizlik sozlamalari']
     ];
     
     if (!isUpdateMode) {
@@ -543,7 +720,8 @@ function getUserKeyboard() {
                 ['📊 Mening sahifam', '🚗 Mening avtomobillarim'],
                 ['🎁 Mening bonuslarim', '➕ Yangi avtomobil qo\'shish'],
                 ['📋 Diagnostika tarixim', '📸 Bizning Instagram'],
-                ['ℹ️ Ma\'lumot', '❌ Asosiy menyu']
+                ['👥 Telegram guruhimiz', 'ℹ️ Ma\'lumot'],
+                ['❌ Asosiy menyu']
             ],
             resize_keyboard: true,
             one_time_keyboard: false,
@@ -615,6 +793,18 @@ function getUserActionKeyboard(userId, isBlocked) {
     
     keyboard.push([{ text: '🗑️ O\'chirish', callback_data: `delete_user_${userId}` }]);
     keyboard.push([{ text: '🔙 Orqaga', callback_data: 'back_to_user_list' }]);
+    
+    return { reply_markup: { inline_keyboard: keyboard } };
+}
+
+function getSecurityKeyboard() {
+    const keyboard = [
+        [{ text: '👥 Ruxsat berilgan adminlar', callback_data: 'security_allowed_admins' }],
+        [{ text: '➕ Admin qo\'shish', callback_data: 'security_add_admin' }],
+        [{ text: '➖ Admin o\'chirish', callback_data: 'security_remove_admin' }],
+        [{ text: '📜 Xavfsizlik jurnali', callback_data: 'security_log' }],
+        [{ text: '🔙 Orqaga', callback_data: 'security_back' }]
+    ];
     
     return { reply_markup: { inline_keyboard: keyboard } };
 }
@@ -933,7 +1123,7 @@ bot.onText(/\/history/, async (msg) => {
 bot.onText(/\/info/, async (msg) => {
     const chatId = msg.chat.id;
     await sendReminder(chatId);
-    await bot.sendMessage(chatId, `ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 Bitta telefon bilan ${MAX_CARS_PER_USER} tagacha avtomobil\n📞 Aloqa: ${ADMIN_PHONE}\n📌 Bot versiyasi: ${BOT_VERSION}\n🔗 Bot linki: ${NEW_BOT_LINK}\n📸 Instagram: ${INSTAGRAM_LINK}`, { parse_mode: 'Markdown' });
+    await bot.sendMessage(chatId, `ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 Bitta telefon bilan ${MAX_CARS_PER_USER} tagacha avtomobil\n📞 Aloqa: ${ADMIN_PHONE}\n📌 Bot versiyasi: ${BOT_VERSION}\n🔗 Bot linki: ${NEW_BOT_LINK}\n📸 Instagram: ${INSTAGRAM_LINK}\n👥 Telegram guruhimiz: ${TELEGRAM_GROUP_LINK}`, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/close/, async (msg) => {
@@ -1020,7 +1210,7 @@ bot.on('message', async (msg) => {
         
         try {
             await sendReminder(chatId);
-            await bot.sendMessage(chatId, `✅ *Siz muvaffaqiyatli ro'yxatdan o'tdingiz, ${userFullName || 'hurmatli mijoz'}!*\n\n👤 Ism: ${userFullName || 'Kiritilmagan'}\n🚗 Avtomobil: ${carNumber}\n📞 Telefon: ${session.data.phone}\n\n🎁 *Bonus tizimi:* Har 5 diagnostikada 1 ta BEPUL!\n📸 *Instagram:* Bizni kuzatib boring: ${INSTAGRAM_LINK}\n\n➕ "➕ Yangi avtomobil qo'shish" tugmasi orqali yana avtomobil qo'shishingiz mumkin.\n📌 Bot versiyasi: ${BOT_VERSION}`, { parse_mode: 'Markdown' });
+            await bot.sendMessage(chatId, `✅ *Siz muvaffaqiyatli ro'yxatdan o'tdingiz, ${userFullName || 'hurmatli mijoz'}!*\n\n👤 Ism: ${userFullName || 'Kiritilmagan'}\n🚗 Avtomobil: ${carNumber}\n📞 Telefon: ${session.data.phone}\n\n🎁 *Bonus tizimi:* Har 5 diagnostikada 1 ta BEPUL!\n📸 *Instagram:* Bizni kuzatib boring: ${INSTAGRAM_LINK}\n👥 *Telegram guruhimiz:* ${TELEGRAM_GROUP_LINK}\n\n➕ "➕ Yangi avtomobil qo'shish" tugmasi orqali yana avtomobil qo'shishingiz mumkin.\n📌 Bot versiyasi: ${BOT_VERSION}`, { parse_mode: 'Markdown' });
             await sendMainMenu(chatId, false);
             
             for (const adminId of ADMIN_IDS) {
@@ -1305,9 +1495,23 @@ bot.on('message', async (msg) => {
             ...instagramKeyboard
         });
     }
+    else if (text === '👥 Telegram guruhimiz') {
+        const groupKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '👥 Telegram guruhiga o\'tish', url: TELEGRAM_GROUP_LINK }]
+                ]
+            }
+        };
+        
+        await bot.sendMessage(chatId, `👥 *TELEGRAM GURUHIMIZ*\n\nXavfsiz haydash bo'yicha maslahatlar, yangiliklar va foydali ma'lumotlar uchun Telegram guruhimizga qo'shiling:\n\n🔗 ${TELEGRAM_GROUP_LINK}`, {
+            parse_mode: 'Markdown',
+            ...groupKeyboard
+        });
+    }
     else if (text === 'ℹ️ Ma\'lumot') {
         await sendReminder(chatId);
-        await bot.sendMessage(chatId, `ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 Bitta telefon bilan ${MAX_CARS_PER_USER} tagacha avtomobil\n📞 Aloqa: ${ADMIN_PHONE}\n📌 Bot versiyasi: ${BOT_VERSION}\n🔗 Bot linki: ${NEW_BOT_LINK}\n📸 Instagram: ${INSTAGRAM_LINK}`, { parse_mode: 'Markdown' });
+        await bot.sendMessage(chatId, `ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 Bitta telefon bilan ${MAX_CARS_PER_USER} tagacha avtomobil\n📞 Aloqa: ${ADMIN_PHONE}\n📌 Bot versiyasi: ${BOT_VERSION}\n🔗 Bot linki: ${NEW_BOT_LINK}\n📸 Instagram: ${INSTAGRAM_LINK}\n👥 Telegram guruhimiz: ${TELEGRAM_GROUP_LINK}`, { parse_mode: 'Markdown' });
     }
     else if (text === '❌ Asosiy menyu') {
         clearUserSession(userId);
@@ -1407,6 +1611,28 @@ bot.on('message', async (msg) => {
         });
         await bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
     }
+    else if (text === '📄 PDF Hisobot') {
+        await bot.sendMessage(chatId, '📄 *PDF hisobot tayyorlanmoqda...*\n\nIltimos, kuting...', { parse_mode: 'Markdown' });
+        
+        try {
+            const allDiagnostics = getAllDiagnostics(100);
+            const filepath = await generateDiagnosticsPDF(allDiagnostics);
+            
+            await bot.sendDocument(chatId, filepath, {
+                caption: `📊 *DIAGNOSTIKA HISOBOTI*\n\n📅 Sana: ${new Date().toLocaleString()}\n📊 Jami diagnostikalar: ${allDiagnostics.length} ta\n💰 Umumiy daromad: ${allDiagnostics.filter(d => !d.isFree).reduce((sum, d) => sum + d.price, 0).toLocaleString()} so'm\n\n📌 Hisobot PDF formatda yuklandi.`,
+                parse_mode: 'Markdown'
+            });
+            
+            // Faylni o'chirish
+            setTimeout(() => {
+                fs.unlinkSync(filepath);
+            }, 60000);
+            
+        } catch (error) {
+            console.error('PDF yaratish xatolik:', error);
+            await bot.sendMessage(chatId, '❌ *PDF hisobot yaratishda xatolik yuz berdi!*', { parse_mode: 'Markdown' });
+        }
+    }
     else if (text === '💾 Backup yaratish') {
         await bot.sendMessage(chatId, '💾 *Backup yaratilmoqda...*', { parse_mode: 'Markdown' });
         createBackup();
@@ -1441,6 +1667,24 @@ bot.on('message', async (msg) => {
             }
         );
     }
+    else if (text === '🔐 Xavfsizlik sozlamalari') {
+        if (!isSuperAdmin(userId) && !canEditCode(userId)) {
+            await bot.sendMessage(chatId, '❌ *Sizda bu amalni bajarish uchun ruxsat yo\'q!*\n\nFaqat Super Admin yoki ruxsat berilgan adminlar xavfsizlik sozlamalarini o\'zgartirishi mumkin.', { parse_mode: 'Markdown' });
+            return;
+        }
+        
+        await bot.sendMessage(chatId, 
+            `🔐 *XAVFSIZLIK SOZLAMALARI*\n\n` +
+            `👑 Super Admin ID: ${SUPER_ADMIN_ID}\n` +
+            `👥 Ruxsat berilgan adminlar: ${adminSettings.allowedEditors.length} ta\n` +
+            `📜 Xavfsizlik jurnali: ${adminSettings.securityLog.length} ta yozuv\n\n` +
+            `📌 Quyidagi amallardan birini tanlang:`,
+            { 
+                parse_mode: 'Markdown',
+                ...getSecurityKeyboard()
+            }
+        );
+    }
     else if (text === '🚀 Yangi versiyaga o\'tish') {
         await bot.sendMessage(chatId, `⚠️ *YANGI VERSIYAGA O'TISH*\n\nSiz yangi versiyaga o'tmoqchisiz. Bu amal:\n\n1. Barcha foydalanuvchilarga yangilanish haqida xabar yuboriladi\n2. Bot yangilanish rejimiga o'tadi\n3. Foydalanuvchilarga yangi bot haqida eslatma ko'rsatiladi\n\n❓ Davom etasizmi?`, {
             parse_mode: 'Markdown',
@@ -1464,8 +1708,144 @@ bot.on('callback_query', async (query) => {
     const chatId = query.message.chat.id;
     const data = query.data;
     const messageId = query.message.message_id;
+    const userId = query.from.id;
     
-    if (data === 'confirm_update') {
+    // Xavfsizlik callback lari
+    if (data === 'security_allowed_admins') {
+        await bot.answerCallbackQuery(query.id);
+        
+        let msg = '👥 *RUXSAT BERILGAN ADMINLAR*\n━━━━━━━━━━━━━━━━━━\n\n';
+        if (adminSettings.allowedEditors.length === 0) {
+            msg += 'Hech qanday admin ruxsatga ega emas.\nFaqat Super Admin kodni o\'zgartirishi mumkin.';
+        } else {
+            adminSettings.allowedEditors.forEach((adminId, index) => {
+                const admin = getUserByUserId(adminId);
+                msg += `${index + 1}. ID: ${adminId}\n`;
+                if (admin) {
+                    msg += `👤 ${admin.fullName || admin.phone}\n`;
+                }
+                msg += `━━━━━━━━━━━━━━━━━━\n`;
+            });
+        }
+        
+        await bot.editMessageText(msg, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            ...getSecurityKeyboard()
+        });
+    }
+    else if (data === 'security_add_admin') {
+        await bot.answerCallbackQuery(query.id);
+        await bot.editMessageText(
+            `➕ *ADMIN QO'SHISH*\n\nRuxsat bermoqchi bo'lgan adminning Telegram ID sini yuboring.\n\n⚠️ Faqat Super Admin bu amalni bajarishi mumkin!\n\n❌ Bekor qilish uchun /cancel yozing.`,
+            {
+                chat_id: chatId,
+                message_id: messageId,
+                parse_mode: 'Markdown'
+            }
+        );
+        
+        // Admin qo'shish uchun session
+        const session = getUserSession(userId);
+        session.step = 'add_admin_permission';
+        return;
+    }
+    else if (data === 'security_remove_admin') {
+        await bot.answerCallbackQuery(query.id);
+        
+        if (adminSettings.allowedEditors.length === 0) {
+            await bot.editMessageText(
+                `❌ *Hech qanday admin ruxsatga ega emas!*`,
+                {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    parse_mode: 'Markdown',
+                    ...getSecurityKeyboard()
+                }
+            );
+            return;
+        }
+        
+        let msg = `➖ *ADMIN O'CHIRISH*\n\nRuxsatni olib qo'yish uchun adminni tanlang:\n\n`;
+        const keyboard = [];
+        
+        adminSettings.allowedEditors.forEach(adminId => {
+            const admin = getUserByUserId(adminId);
+            const name = admin ? admin.fullName || admin.phone : `ID: ${adminId}`;
+            keyboard.push([{ text: `❌ ${name}`, callback_data: `remove_admin_${adminId}` }]);
+        });
+        keyboard.push([{ text: '🔙 Orqaga', callback_data: 'security_back' }]);
+        
+        await bot.editMessageText(msg, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            reply_markup: { inline_keyboard: keyboard }
+        });
+        return;
+    }
+    else if (data === 'security_log') {
+        await bot.answerCallbackQuery(query.id);
+        
+        let msg = '📜 *XAVFSIZLIK JURNALI*\n━━━━━━━━━━━━━━━━━━\n\n';
+        if (adminSettings.securityLog.length === 0) {
+            msg += 'Hech qanday xavfsizlik hodisasi qayd etilmagan.';
+        } else {
+            adminSettings.securityLog.slice(0, 20).forEach(log => {
+                msg += `📅 ${new Date(log.date).toLocaleString()}\n`;
+                msg += `🔹 ${log.action}\n`;
+                msg += `👤 Admin ID: ${log.userId}\n`;
+                msg += `📝 ${log.details}\n`;
+                msg += `━━━━━━━━━━━━━━━━━━\n`;
+            });
+        }
+        
+        await bot.editMessageText(msg, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: 'Markdown',
+            ...getSecurityKeyboard()
+        });
+    }
+    else if (data === 'security_back') {
+        await bot.answerCallbackQuery(query.id);
+        await bot.editMessageText(
+            `🔐 *XAVFSIZLIK SOZLAMALARI*\n\n` +
+            `👑 Super Admin ID: ${SUPER_ADMIN_ID}\n` +
+            `👥 Ruxsat berilgan adminlar: ${adminSettings.allowedEditors.length} ta\n` +
+            `📜 Xavfsizlik jurnali: ${adminSettings.securityLog.length} ta yozuv\n\n` +
+            `📌 Quyidagi amallardan birini tanlang:`,
+            {
+                chat_id: chatId,
+                message_id: messageId,
+                parse_mode: 'Markdown',
+                ...getSecurityKeyboard()
+            }
+        );
+    }
+    else if (data.startsWith('remove_admin_')) {
+        const targetAdminId = parseInt(data.split('_')[2]);
+        const result = revokeEditPermission(userId, targetAdminId);
+        
+        await bot.answerCallbackQuery(query.id, { text: result.message, show_alert: true });
+        
+        // Qaytadan xavfsizlik menyusini ko'rsatish
+        await bot.editMessageText(
+            `🔐 *XAVFSIZLIK SOZLAMALARI*\n\n` +
+            `👑 Super Admin ID: ${SUPER_ADMIN_ID}\n` +
+            `👥 Ruxsat berilgan adminlar: ${adminSettings.allowedEditors.length} ta\n` +
+            `📜 Xavfsizlik jurnali: ${adminSettings.securityLog.length} ta yozuv\n\n` +
+            `📌 Quyidagi amallardan birini tanlang:`,
+            {
+                chat_id: chatId,
+                message_id: messageId,
+                parse_mode: 'Markdown',
+                ...getSecurityKeyboard()
+            }
+        );
+    }
+    else if (data === 'confirm_update') {
         await bot.answerCallbackQuery(query.id);
         await bot.sendMessage(chatId, '📢 *Yangilanish boshlandi...*\n\nBarcha foydalanuvchilarga xabar yuborilmoqda...', { parse_mode: 'Markdown' });
         
@@ -1695,6 +2075,36 @@ bot.on('callback_query', async (query) => {
     }
 });
 
+// -------------------- SESSION ADMIN QO'SHISH --------------------
+bot.on('message', async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const text = msg.text;
+    
+    const session = getUserSession(userId);
+    
+    if (session.step === 'add_admin_permission') {
+        if (text === '/cancel') {
+            clearUserSession(userId);
+            await bot.sendMessage(chatId, '❌ *Amal bekor qilindi.*', { parse_mode: 'Markdown' });
+            await sendMainMenu(chatId, true);
+            return;
+        }
+        
+        const targetAdminId = parseInt(text);
+        if (isNaN(targetAdminId)) {
+            await bot.sendMessage(chatId, '❌ *Noto\'g\'ri ID!* Iltimos, to\'g\'ri Telegram ID yuboring yoki /cancel yozing.', { parse_mode: 'Markdown' });
+            return;
+        }
+        
+        const result = grantEditPermission(userId, targetAdminId);
+        await bot.sendMessage(chatId, result.message, { parse_mode: 'Markdown' });
+        
+        clearUserSession(userId);
+        await sendMainMenu(chatId, true);
+    }
+});
+
 // -------------------- XATOLIKLARNI QAYTA ISHLASH --------------------
 bot.on('polling_error', (error) => console.error('Polling xatolik:', error));
 process.on('uncaughtException', (error) => console.error('Uncaught exception:', error));
@@ -1706,6 +2116,7 @@ console.log('='.repeat(60));
 
 loadVersion();
 loadData();
+loadAdminSettings();
 
 console.log('='.repeat(60));
 console.log('🚗 ISUZU DOCTOR BOT ISHGA TUSHDI');
@@ -1713,7 +2124,10 @@ console.log('='.repeat(60));
 console.log(`📌 Versiya: ${BOT_VERSION}`);
 console.log(`🔗 Bot linki: ${NEW_BOT_LINK}`);
 console.log(`📸 Instagram: ${INSTAGRAM_LINK}`);
+console.log(`👥 Telegram guruhi: ${TELEGRAM_GROUP_LINK}`);
 console.log(`👑 Admin telefon: ${ADMIN_PHONE}`);
+console.log(`🔐 Super Admin ID: ${SUPER_ADMIN_ID}`);
+console.log(`👥 Ruxsat berilgan adminlar: ${adminSettings.allowedEditors.length} ta`);
 console.log(`💰 Diagnostika narxi: ${DIAGNOSTIC_PRICE.toLocaleString()} so'm`);
 console.log(`👥 Faol foydalanuvchilar: ${users.filter(u => !u.isAdmin && !u.isBlocked).length}`);
 console.log(`🚫 Bloklanganlar: ${users.filter(u => !u.isAdmin && u.isBlocked).length}`);
