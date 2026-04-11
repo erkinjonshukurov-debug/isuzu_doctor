@@ -653,51 +653,52 @@ function getAllUsersWithDetails() {
     }));
 }
 
-// ======================== KEYBOARDS - ANDROID UCHUN MAXSUS ========================
-// SODDA VA ISHONCHLI - har bir tugma alohida qatorda, hech qanday qo'shimcha parametrsiz
-function getAdminKeyboard() {
+// ======================== REPLY KEYBOARDS - ANDROID UCHUN ENG YAXSHI ========================
+// Foydalanuvchi uchun reply keyboard
+function getUserReplyKeyboard() {
     return {
         reply_markup: {
             keyboard: [
-                ['📊 Statistika'],
-                ['👥 Foydalanuvchilar'],
-                ['🔧 Diagnostika qo\'shish'],
-                ['🎁 Bonusga yaqinlar'],
-                ['⚠️ Xatoliklar'],
-                ['📋 Diagnostikalar tarixi'],
-                ['📅 Bugungi diagnostikalar'],
-                ['📄 Hisobot olish'],
-                ['💾 Backup yaratish'],
-                ['🔄 Database tiklash'],
-                ['🚫 Foydalanuvchini boshqarish'],
-                ['🔐 Xavfsizlik'],
-                ['🚀 Yangi versiyaga o\'tish'],
-                ['❌ Asosiy menyu']
+                ['📊 Mening sahifam', '🚗 Mening avtomobillarim'],
+                ['🎁 Mening bonuslarim', '➕ Yangi avtomobil qo\'shish'],
+                ['📋 Diagnostika tarixim', '📸 Bizning Instagram'],
+                ['👥 Telegram guruhimiz', 'ℹ️ Ma\'lumot']
             ],
-            resize_keyboard: true
+            resize_keyboard: true,
+            one_time_keyboard: false
         }
     };
 }
 
-function getUserKeyboard() {
+// Admin uchun reply keyboard
+function getAdminReplyKeyboard() {
+    const keyboard = [
+        ['📊 Statistika', '👥 Foydalanuvchilar'],
+        ['🔧 Diagnostika qo\'shish', '🎁 Bonusga yaqinlar'],
+        ['⚠️ Xatoliklar', '📋 Diagnostikalar tarixi'],
+        ['📅 Bugungi diagnostikalar', '📄 Hisobot olish'],
+        ['💾 Backup yaratish', '🔄 Database tiklash'],
+        ['🚫 Foydalanuvchini boshqarish', '🔐 Xavfsizlik']
+    ];
+    
+    if (!isUpdateMode) {
+        keyboard.push(['🚀 Yangi versiyaga o\'tish']);
+    } else {
+        keyboard.push(['✅ Yangilanish rejimini o\'chirish']);
+    }
+    
+    keyboard.push(['❌ Asosiy menyu']);
+    
     return {
         reply_markup: {
-            keyboard: [
-                ['📊 Mening sahifam'],
-                ['🚗 Mening avtomobillarim'],
-                ['🎁 Mening bonuslarim'],
-                ['➕ Yangi avtomobil qo\'shish'],
-                ['📋 Diagnostika tarixim'],
-                ['📸 Bizning Instagram'],
-                ['👥 Telegram guruhimiz'],
-                ['ℹ️ Ma\'lumot'],
-                ['❌ Asosiy menyu']
-            ],
-            resize_keyboard: true
+            keyboard: keyboard,
+            resize_keyboard: true,
+            one_time_keyboard: false
         }
     };
 }
 
+// Telefon raqamini so'rash uchun keyboard
 function getPhoneKeyboard() {
     return {
         reply_markup: {
@@ -710,62 +711,25 @@ function getPhoneKeyboard() {
     };
 }
 
-function getBackupListKeyboard(backups) {
-    const keyboard = backups.slice(0, 10).map(b => [{ text: `📁 ${b.name}`, callback_data: `restore_${b.name}` }]);
-    keyboard.push([{ text: '❌ Bekor qilish', callback_data: 'restore_cancel' }]);
-    return { reply_markup: { inline_keyboard: keyboard } };
-}
-
-function getUserManagementKeyboard(users, page = 0) {
-    const itemsPerPage = 5;
-    const start = page * itemsPerPage;
-    const end = start + itemsPerPage;
-    const pageUsers = users.slice(start, end);
-    
-    const keyboard = [];
-    
-    pageUsers.forEach(user => {
-        const status = user.isBlocked ? '🔴 Bloklangan' : '🟢 Faol';
-        keyboard.push([{
-            text: `${user.fullName || 'Ismsiz'} - ${user.phone}`,
-            callback_data: `manage_user_${user.userId}`
-        }]);
-    });
-    
-    const navButtons = [];
-    if (page > 0) navButtons.push({ text: '◀️ Oldingi', callback_data: `user_page_${page - 1}` });
-    if (end < users.length) navButtons.push({ text: 'Keyingi ▶️', callback_data: `user_page_${page + 1}` });
-    if (navButtons.length > 0) keyboard.push(navButtons);
-    
-    keyboard.push([{ text: '❌ Bekor qilish', callback_data: 'user_manage_cancel' }]);
-    
-    return { reply_markup: { inline_keyboard: keyboard } };
-}
-
-function getUserActionKeyboard(userId, isBlocked) {
-    const keyboard = [];
-    if (isBlocked) {
-        keyboard.push([{ text: '✅ Blokdan ochish', callback_data: `unblock_user_${userId}` }]);
-    } else {
-        keyboard.push([{ text: '🚫 Bloklash', callback_data: `block_user_${userId}` }]);
-    }
-    keyboard.push([{ text: '🗑️ O\'chirish', callback_data: `delete_user_${userId}` }]);
-    keyboard.push([{ text: '🔙 Orqaga', callback_data: 'back_to_user_list' }]);
-    return { reply_markup: { inline_keyboard: keyboard } };
-}
-
-function getSecurityKeyboard() {
-    return {
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: '👥 Ruxsat berilgan adminlar', callback_data: 'security_allowed_admins' }],
-                [{ text: '➕ Admin qo\'shish', callback_data: 'security_add_admin' }],
-                [{ text: '➖ Admin o\'chirish', callback_data: 'security_remove_admin' }],
-                [{ text: '📜 Xavfsizlik jurnali', callback_data: 'security_log' }],
-                [{ text: '🔙 Orqaga', callback_data: 'security_back' }]
-            ]
+// Asosiy menyuni yuborish
+async function sendMainMenu(chatId, isAdminUser = false) {
+    try {
+        await sendReminder(chatId);
+        
+        if (isAdminUser) {
+            await bot.sendMessage(chatId, '👑 *Admin paneliga xush kelibsiz!*\n\nQuyidagi tugmalardan foydalaning:', {
+                parse_mode: 'Markdown',
+                ...getAdminReplyKeyboard()
+            });
+        } else {
+            await bot.sendMessage(chatId, `🏠 *Asosiy menyu* (Versiya ${BOT_VERSION})\n\n🚗 ISUZU DOCTOR botiga xush kelibsiz!\n\nQuyidagi tugmalardan birini tanlang:`, {
+                parse_mode: 'Markdown',
+                ...getUserReplyKeyboard()
+            });
         }
-    };
+    } catch (error) {
+        console.error('Menu yuborishda xatolik:', error);
+    }
 }
 
 // -------------------- SESSIONS --------------------
@@ -780,26 +744,6 @@ function getUserSession(userId) {
 
 function clearUserSession(userId) {
     userSessions.delete(userId);
-}
-
-async function sendMainMenu(chatId, isAdminUser = false) {
-    try {
-        await sendReminder(chatId);
-        
-        if (isAdminUser) {
-            await bot.sendMessage(chatId, '👑 *Admin paneliga xush kelibsiz!*\n\nQuyidagi tugmalardan foydalaning:', {
-                parse_mode: 'Markdown',
-                ...getAdminKeyboard()
-            });
-        } else {
-            await bot.sendMessage(chatId, `🏠 *Asosiy menyu* (Versiya ${BOT_VERSION})\n\n🚗 ISUZU DOCTOR botiga xush kelibsiz!\n\nQuyidagi tugmalardan birini tanlang:`, {
-                parse_mode: 'Markdown',
-                ...getUserKeyboard()
-            });
-        }
-    } catch (error) {
-        console.error('Menu yuborishda xatolik:', error);
-    }
 }
 
 // -------------------- /start KOMANDASI --------------------
@@ -1643,6 +1587,62 @@ bot.on('message', async (msg) => {
         await sendMainMenu(chatId, true);
     }
 });
+
+// -------------------- BACKUP LIST KEYBOARD --------------------
+function getBackupListKeyboard(backups) {
+    const keyboard = backups.slice(0, 10).map(b => [{ text: `📁 ${b.name}`, callback_data: `restore_${b.name}` }]);
+    keyboard.push([{ text: '❌ Bekor qilish', callback_data: 'restore_cancel' }]);
+    return { reply_markup: { inline_keyboard: keyboard } };
+}
+
+// -------------------- USER MANAGEMENT KEYBOARD --------------------
+function getUserManagementKeyboard(users, page = 0) {
+    const itemsPerPage = 5;
+    const start = page * itemsPerPage;
+    const end = start + itemsPerPage;
+    const pageUsers = users.slice(start, end);
+    
+    const keyboard = [];
+    pageUsers.forEach(user => {
+        keyboard.push([{ text: `${user.fullName || 'Ismsiz'} - ${user.phone}`, callback_data: `manage_user_${user.userId}` }]);
+    });
+    
+    const navButtons = [];
+    if (page > 0) navButtons.push({ text: '◀️ Oldingi', callback_data: `user_page_${page - 1}` });
+    if (end < users.length) navButtons.push({ text: 'Keyingi ▶️', callback_data: `user_page_${page + 1}` });
+    if (navButtons.length > 0) keyboard.push(navButtons);
+    
+    keyboard.push([{ text: '❌ Bekor qilish', callback_data: 'user_manage_cancel' }]);
+    return { reply_markup: { inline_keyboard: keyboard } };
+}
+
+// -------------------- USER ACTION KEYBOARD --------------------
+function getUserActionKeyboard(userId, isBlocked) {
+    const keyboard = [];
+    if (isBlocked) {
+        keyboard.push([{ text: '✅ Blokdan ochish', callback_data: `unblock_user_${userId}` }]);
+    } else {
+        keyboard.push([{ text: '🚫 Bloklash', callback_data: `block_user_${userId}` }]);
+    }
+    keyboard.push([{ text: '🗑️ O\'chirish', callback_data: `delete_user_${userId}` }]);
+    keyboard.push([{ text: '🔙 Orqaga', callback_data: 'back_to_user_list' }]);
+    return { reply_markup: { inline_keyboard: keyboard } };
+}
+
+// -------------------- SECURITY KEYBOARD --------------------
+function getSecurityKeyboard() {
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: '👥 Ruxsat berilgan adminlar', callback_data: 'security_allowed_admins' }],
+                [{ text: '➕ Admin qo\'shish', callback_data: 'security_add_admin' }],
+                [{ text: '➖ Admin o\'chirish', callback_data: 'security_remove_admin' }],
+                [{ text: '📜 Xavfsizlik jurnali', callback_data: 'security_log' }],
+                [{ text: '🔙 Orqaga', callback_data: 'security_back' }]
+            ]
+        }
+    };
+}
 
 // -------------------- CALLBACK QUERY --------------------
 bot.on('callback_query', async (query) => {
