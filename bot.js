@@ -653,8 +653,8 @@ function getAllUsersWithDetails() {
     }));
 }
 
-// ======================== REPLY KEYBOARDS - ANDROID UCHUN ENG YAXSHI ========================
-// Foydalanuvchi uchun reply keyboard
+// ======================== REPLY KEYBOARDS - ANDROID UCHUN MAXSUS ========================
+// Foydalanuvchi uchun reply keyboard - sodda va ishonchli
 function getUserReplyKeyboard() {
     return {
         reply_markup: {
@@ -662,10 +662,13 @@ function getUserReplyKeyboard() {
                 ['📊 Mening sahifam', '🚗 Mening avtomobillarim'],
                 ['🎁 Mening bonuslarim', '➕ Yangi avtomobil qo\'shish'],
                 ['📋 Diagnostika tarixim', '📸 Bizning Instagram'],
-                ['👥 Telegram guruhimiz', 'ℹ️ Ma\'lumot']
+                ['👥 Telegram guruhimiz', 'ℹ️ Ma\'lumot'],
+                ['❌ Asosiy menyu']
             ],
             resize_keyboard: true,
-            one_time_keyboard: false
+            one_time_keyboard: false,
+            selective: false,
+            is_persistent: true
         }
     };
 }
@@ -693,7 +696,9 @@ function getAdminReplyKeyboard() {
         reply_markup: {
             keyboard: keyboard,
             resize_keyboard: true,
-            one_time_keyboard: false
+            one_time_keyboard: false,
+            selective: false,
+            is_persistent: true
         }
     };
 }
@@ -706,29 +711,70 @@ function getPhoneKeyboard() {
                 [{ text: '📱 Telefon raqamini yuborish', request_contact: true }]
             ],
             resize_keyboard: true,
-            one_time_keyboard: true
+            one_time_keyboard: true,
+            selective: false
         }
     };
 }
 
-// Asosiy menyuni yuborish
+// Keyboardni tozalash
+function removeKeyboard() {
+    return {
+        reply_markup: {
+            remove_keyboard: true
+        }
+    };
+}
+
+// Asosiy menyuni yuborish - reply keyboard bilan
 async function sendMainMenu(chatId, isAdminUser = false) {
     try {
         await sendReminder(chatId);
         
+        let menuMessage = '';
+        let keyboard = null;
+        
         if (isAdminUser) {
-            await bot.sendMessage(chatId, '👑 *Admin paneliga xush kelibsiz!*\n\nQuyidagi tugmalardan foydalaning:', {
-                parse_mode: 'Markdown',
-                ...getAdminReplyKeyboard()
-            });
+            menuMessage = '👑 *Admin paneliga xush kelibsiz!*\n\nQuyidagi tugmalardan foydalaning:';
+            keyboard = getAdminReplyKeyboard();
         } else {
-            await bot.sendMessage(chatId, `🏠 *Asosiy menyu* (Versiya ${BOT_VERSION})\n\n🚗 ISUZU DOCTOR botiga xush kelibsiz!\n\nQuyidagi tugmalardan birini tanlang:`, {
-                parse_mode: 'Markdown',
-                ...getUserReplyKeyboard()
-            });
+            menuMessage = `🏠 *Asosiy menyu* (Versiya ${BOT_VERSION})\n\n🚗 ISUZU DOCTOR botiga xush kelibsiz!\n\nQuyidagi tugmalardan birini tanlang:`;
+            keyboard = getUserReplyKeyboard();
+        }
+        
+        // Keyboardni bir necha marta yuborishga urinib ko'rish
+        let sent = false;
+        for (let i = 0; i < 3; i++) {
+            try {
+                await bot.sendMessage(chatId, menuMessage, {
+                    parse_mode: 'Markdown',
+                    ...keyboard
+                });
+                sent = true;
+                break;
+            } catch (err) {
+                console.log(`Menu yuborish urinish ${i + 1} xato:`, err.message);
+                if (i === 2) {
+                    // Oxirgi urinishda keyboard'siz yuborish
+                    await bot.sendMessage(chatId, menuMessage + '\n\n⚠️ Tugmalar ko\'rinmasa, quyidagi buyruqlardan foydalaning:\n/profile - Mening sahifam\n/my_cars - Avtomobillarim\n/my_bonus - Bonuslarim\n/history - Tarix\n/info - Ma\'lumot', {
+                        parse_mode: 'Markdown'
+                    });
+                }
+            }
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
+        if (!sent) {
+            console.log('Menu yuborilmadi!');
         }
     } catch (error) {
         console.error('Menu yuborishda xatolik:', error);
+        // Xatolik bo'lsa matnli menyu yuborish
+        if (isAdminUser) {
+            await bot.sendMessage(chatId, '👑 Admin paneli\n\n/statistika - Statistika\n/users - Foydalanuvchilar\n/add_diagnostic - Diagnostika qoshish\n/close - Asosiy menyu');
+        } else {
+            await bot.sendMessage(chatId, '🏠 Asosiy menyu\n\n/profile - Mening sahifam\n/my_cars - Mening avtomobillarim\n/my_bonus - Mening bonuslarim\n/add_car - Yangi avtomobil\n/history - Diagnostika tarixi\n/info - Malumot\n/close - Asosiy menyu');
+        }
     }
 }
 
@@ -760,7 +806,7 @@ bot.onText(/\/start/, async (msg) => {
     if (existingUser && existingUser.isBlocked) {
         await bot.sendMessage(chatId, '🚫 *Siz botdan bloklangansiz!*\n\nIltimos, administrator bilan bog\'laning.\n📞 Aloqa: ' + ADMIN_PHONE, { 
             parse_mode: 'Markdown',
-            reply_markup: { remove_keyboard: true }
+            ...removeKeyboard()
         });
         return;
     }
@@ -875,14 +921,14 @@ bot.on('contact', async (msg) => {
         session.data.isExistingUser = true;
         await bot.sendMessage(chatId, `✅ Telefon raqam tasdiqlandi: ${phoneNumber}\n\n🚗 *Yangi avtomobil raqamini kiriting:*\n\nMasalan: 01A777AA\n\n⚠️ Siz maksimum ${MAX_CARS_PER_USER} tagacha avtomobil qo'sha olasiz.`, {
             parse_mode: 'Markdown',
-            reply_markup: { remove_keyboard: true }
+            ...removeKeyboard()
         });
     } else {
         session.step = 'first_car_number';
         session.data.isExistingUser = false;
         await bot.sendMessage(chatId, `✅ Telefon raqam qabul qilindi: ${phoneNumber}\n\n🚗 *Birinchi avtomobil raqamini kiriting:*\n\nMasalan: 01A777AA`, {
             parse_mode: 'Markdown',
-            reply_markup: { remove_keyboard: true }
+            ...removeKeyboard()
         });
     }
 });
@@ -1065,7 +1111,7 @@ bot.onText(/\/add_diagnostic/, async (msg) => {
     
     const session = getUserSession(userId);
     session.step = 'admin_add_diagnostic';
-    await bot.sendMessage(chatId, '🔧 *Diagnostika qo\'shish*\n\n🚗 Avtomobil raqamini kiriting:', { parse_mode: 'Markdown', reply_markup: { remove_keyboard: true } });
+    await bot.sendMessage(chatId, '🔧 *Diagnostika qo\'shish*\n\n🚗 Avtomobil raqamini kiriting:', { parse_mode: 'Markdown', ...removeKeyboard() });
 });
 
 // -------------------- XABARLARNI QAYTA ISHLASH --------------------
@@ -1264,7 +1310,7 @@ bot.on('message', async (msg) => {
     if (user && user.isBlocked) {
         await bot.sendMessage(chatId, '🚫 *Siz botdan bloklangansiz!*\n\nIltimos, administrator bilan bog\'laning.\n📞 Aloqa: ' + ADMIN_PHONE, { 
             parse_mode: 'Markdown',
-            reply_markup: { remove_keyboard: true }
+            ...removeKeyboard()
         });
         return;
     }
@@ -1317,7 +1363,7 @@ bot.on('message', async (msg) => {
         
         await bot.sendMessage(chatId, `🚗 *Yangi avtomobil raqamini kiriting:*\n\nMasalan: 01A777AA\n\n⚠️ Siz maksimum ${MAX_CARS_PER_USER} tagacha avtomobil qo'sha olasiz.\n📊 Hozirgi avtomobillar soni: ${user.cars.length}/${MAX_CARS_PER_USER}`, {
             parse_mode: 'Markdown',
-            reply_markup: { remove_keyboard: true }
+            ...removeKeyboard()
         });
     }
     else if (text === '🎁 Mening bonuslarim') {
@@ -1443,7 +1489,7 @@ bot.on('message', async (msg) => {
     else if (text === '🔧 Diagnostika qo\'shish') {
         const session = getUserSession(userId);
         session.step = 'admin_add_diagnostic';
-        await bot.sendMessage(chatId, '🔧 *Diagnostika qo\'shish*\n\n🚗 Avtomobil raqamini kiriting:', { parse_mode: 'Markdown', reply_markup: { remove_keyboard: true } });
+        await bot.sendMessage(chatId, '🔧 *Diagnostika qo\'shish*\n\n🚗 Avtomobil raqamini kiriting:', { parse_mode: 'Markdown', ...removeKeyboard() });
     }
     else if (text === '🎁 Bonusga yaqinlar') {
         const nearBonus = getNearBonusCars();
