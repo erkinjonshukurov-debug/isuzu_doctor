@@ -653,16 +653,22 @@ function getAllUsersWithDetails() {
     }));
 }
 
-// -------------------- KEYBOARDS (ANDROID UCHUN OPTIMALLASHTIRILGAN) --------------------
+// ======================== KEYBOARDS - ANDROID UCHUN SODDA ========================
 function getAdminKeyboard() {
-    // Android uchun har bir qatorda 2 tadan tugma
+    // SODDA KELLY - har bir tugma alohida qatorda
     const keyboard = [
-        ['📊 Statistika', '👥 Foydalanuvchilar'],
-        ['🔧 Diagnostika qo\'shish', '🎁 Bonusga yaqinlar'],
-        ['⚠️ Xatoliklar', '📋 Diagnostikalar tarixi'],
-        ['📅 Bugungi diagnostikalar', '📄 Hisobot olish'],
-        ['💾 Backup yaratish', '🔄 Database tiklash'],
-        ['🚫 Foydalanuvchini boshqarish', '🔐 Xavfsizlik']
+        ['📊 Statistika'],
+        ['👥 Foydalanuvchilar'],
+        ['🔧 Diagnostika qo\'shish'],
+        ['🎁 Bonusga yaqinlar'],
+        ['⚠️ Xatoliklar'],
+        ['📋 Diagnostikalar tarixi'],
+        ['📅 Bugungi diagnostikalar'],
+        ['📄 Hisobot olish'],
+        ['💾 Backup yaratish'],
+        ['🔄 Database tiklash'],
+        ['🚫 Foydalanuvchini boshqarish'],
+        ['🔐 Xavfsizlik']
     ];
     
     if (!isUpdateMode) {
@@ -677,29 +683,28 @@ function getAdminKeyboard() {
         reply_markup: {
             keyboard: keyboard,
             resize_keyboard: true,
-            one_time_keyboard: true,
-            selective: true,
-            is_persistent: false
+            one_time_keyboard: false
         }
     };
 }
 
 function getUserKeyboard() {
-    // Android uchun optimallashtirilgan - har bir qatorda 2 tadan tugma
+    // SODDA KELLY - har bir tugma alohida qatorda
     return {
         reply_markup: {
             keyboard: [
-                ['📊 Mening sahifam', '🚗 Mening avtomobillarim'],
-                ['🎁 Mening bonuslarim', '➕ Yangi avtomobil qo\'shish'],
-                ['📋 Diagnostika tarixim', '📸 Bizning Instagram'],
-                ['👥 Telegram guruhimiz', 'ℹ️ Ma\'lumot'],
+                ['📊 Mening sahifam'],
+                ['🚗 Mening avtomobillarim'],
+                ['🎁 Mening bonuslarim'],
+                ['➕ Yangi avtomobil qo\'shish'],
+                ['📋 Diagnostika tarixim'],
+                ['📸 Bizning Instagram'],
+                ['👥 Telegram guruhimiz'],
+                ['ℹ️ Ma\'lumot'],
                 ['❌ Asosiy menyu']
             ],
             resize_keyboard: true,
-            one_time_keyboard: true,
-            selective: true,
-            is_persistent: false,
-            input_field_placeholder: "Menyudan tanlang..."
+            one_time_keyboard: false
         }
     };
 }
@@ -711,8 +716,7 @@ function getPhoneKeyboard() {
                 [{ text: '📱 Telefon raqamini yuborish', request_contact: true }]
             ],
             resize_keyboard: true,
-            one_time_keyboard: true,
-            selective: false
+            one_time_keyboard: true
         }
     };
 }
@@ -813,7 +817,7 @@ async function sendMainMenu(chatId, isAdminUser = false) {
         }
     } catch (error) {
         console.error('Menu yuborishda xatolik:', error);
-        // Xatolik bo'lsa oddiy matnli menyu yuborish
+        // Xatolik bo'lsa oddiy matnli menyu
         if (isAdminUser) {
             await bot.sendMessage(chatId, '👑 Admin paneli\n\n/statistika - Statistika\n/users - Foydalanuvchilar\n/add_diagnostic - Diagnostika qoshish\n/close - Asosiy menyu');
         } else {
@@ -1451,31 +1455,19 @@ bot.on('message', async (msg) => {
         }
     }
     else if (text === '📸 Bizning Instagram') {
-        const instagramKeyboard = {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: '📸 Instagram sahifamizga o\'tish', url: INSTAGRAM_LINK }]
-                ]
-            }
-        };
-        
-        await bot.sendMessage(chatId, `📸 *BIZNING INSTAGRAM*\n\nBizni Instagram sahifamizda kuzatib boring:\n\n🔗 ${INSTAGRAM_LINK}\n\n🚗 Avtomobil yangiliklari, aksiyalar va foydali maslahatlar uchun bizni kuzating!`, {
+        await bot.sendMessage(chatId, `📸 *BIZNING INSTAGRAM*\n\n🔗 ${INSTAGRAM_LINK}\n\nBizni Instagram sahifamizda kuzatib boring!`, {
             parse_mode: 'Markdown',
-            ...instagramKeyboard
+            reply_markup: {
+                inline_keyboard: [[{ text: '📸 Instagramga o\'tish', url: INSTAGRAM_LINK }]]
+            }
         });
     }
     else if (text === '👥 Telegram guruhimiz') {
-        const groupKeyboard = {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: '👥 Telegram guruhiga o\'tish', url: TELEGRAM_GROUP_LINK }]
-                ]
-            }
-        };
-        
-        await bot.sendMessage(chatId, `👥 *TELEGRAM GURUHIMIZ*\n\nEhtiyot qismlar, yangiliklar va foydali ma'lumotlar uchun Telegram guruhimizga qo'shiling:\n\n🔗 ${TELEGRAM_GROUP_LINK}`, {
+        await bot.sendMessage(chatId, `👥 *TELEGRAM GURUHIMIZ*\n\n🔗 ${TELEGRAM_GROUP_LINK}\n\nEhtiyot qismlar, yangiliklar va foydali ma'lumotlar uchun guruhimizga qo'shiling!`, {
             parse_mode: 'Markdown',
-            ...groupKeyboard
+            reply_markup: {
+                inline_keyboard: [[{ text: '👥 Guruhga o\'tish', url: TELEGRAM_GROUP_LINK }]]
+            }
         });
     }
     else if (text === 'ℹ️ Ma\'lumot') {
