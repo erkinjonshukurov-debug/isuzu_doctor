@@ -653,43 +653,33 @@ function getAllUsersWithDetails() {
     }));
 }
 
-// ======================== KEYBOARDS - ANDROID UCHUN SODDA ========================
+// ======================== KEYBOARDS - ANDROID UCHUN MAXSUS ========================
+// SODDA VA ISHONCHLI - har bir tugma alohida qatorda, hech qanday qo'shimcha parametrsiz
 function getAdminKeyboard() {
-    // SODDA KELLY - har bir tugma alohida qatorda
-    const keyboard = [
-        ['📊 Statistika'],
-        ['👥 Foydalanuvchilar'],
-        ['🔧 Diagnostika qo\'shish'],
-        ['🎁 Bonusga yaqinlar'],
-        ['⚠️ Xatoliklar'],
-        ['📋 Diagnostikalar tarixi'],
-        ['📅 Bugungi diagnostikalar'],
-        ['📄 Hisobot olish'],
-        ['💾 Backup yaratish'],
-        ['🔄 Database tiklash'],
-        ['🚫 Foydalanuvchini boshqarish'],
-        ['🔐 Xavfsizlik']
-    ];
-    
-    if (!isUpdateMode) {
-        keyboard.push(['🚀 Yangi versiyaga o\'tish']);
-    } else {
-        keyboard.push(['✅ Yangilanish rejimini o\'chirish']);
-    }
-    
-    keyboard.push(['❌ Asosiy menyu']);
-    
     return {
         reply_markup: {
-            keyboard: keyboard,
-            resize_keyboard: true,
-            one_time_keyboard: false
+            keyboard: [
+                ['📊 Statistika'],
+                ['👥 Foydalanuvchilar'],
+                ['🔧 Diagnostika qo\'shish'],
+                ['🎁 Bonusga yaqinlar'],
+                ['⚠️ Xatoliklar'],
+                ['📋 Diagnostikalar tarixi'],
+                ['📅 Bugungi diagnostikalar'],
+                ['📄 Hisobot olish'],
+                ['💾 Backup yaratish'],
+                ['🔄 Database tiklash'],
+                ['🚫 Foydalanuvchini boshqarish'],
+                ['🔐 Xavfsizlik'],
+                ['🚀 Yangi versiyaga o\'tish'],
+                ['❌ Asosiy menyu']
+            ],
+            resize_keyboard: true
         }
     };
 }
 
 function getUserKeyboard() {
-    // SODDA KELLY - har bir tugma alohida qatorda
     return {
         reply_markup: {
             keyboard: [
@@ -703,8 +693,7 @@ function getUserKeyboard() {
                 ['ℹ️ Ma\'lumot'],
                 ['❌ Asosiy menyu']
             ],
-            resize_keyboard: true,
-            one_time_keyboard: false
+            resize_keyboard: true
         }
     };
 }
@@ -722,7 +711,7 @@ function getPhoneKeyboard() {
 }
 
 function getBackupListKeyboard(backups) {
-    const keyboard = backups.slice(0, 10).map(b => [{ text: `📁 ${b.name} (${b.date.toLocaleDateString()})`, callback_data: `restore_${b.name}` }]);
+    const keyboard = backups.slice(0, 10).map(b => [{ text: `📁 ${b.name}`, callback_data: `restore_${b.name}` }]);
     keyboard.push([{ text: '❌ Bekor qilish', callback_data: 'restore_cancel' }]);
     return { reply_markup: { inline_keyboard: keyboard } };
 }
@@ -738,21 +727,15 @@ function getUserManagementKeyboard(users, page = 0) {
     pageUsers.forEach(user => {
         const status = user.isBlocked ? '🔴 Bloklangan' : '🟢 Faol';
         keyboard.push([{
-            text: `${user.fullName || 'Ismsiz'} - ${user.phone} (${status})`,
+            text: `${user.fullName || 'Ismsiz'} - ${user.phone}`,
             callback_data: `manage_user_${user.userId}`
         }]);
     });
     
     const navButtons = [];
-    if (page > 0) {
-        navButtons.push({ text: '◀️ Oldingi', callback_data: `user_page_${page - 1}` });
-    }
-    if (end < users.length) {
-        navButtons.push({ text: 'Keyingi ▶️', callback_data: `user_page_${page + 1}` });
-    }
-    if (navButtons.length > 0) {
-        keyboard.push(navButtons);
-    }
+    if (page > 0) navButtons.push({ text: '◀️ Oldingi', callback_data: `user_page_${page - 1}` });
+    if (end < users.length) navButtons.push({ text: 'Keyingi ▶️', callback_data: `user_page_${page + 1}` });
+    if (navButtons.length > 0) keyboard.push(navButtons);
     
     keyboard.push([{ text: '❌ Bekor qilish', callback_data: 'user_manage_cancel' }]);
     
@@ -761,29 +744,28 @@ function getUserManagementKeyboard(users, page = 0) {
 
 function getUserActionKeyboard(userId, isBlocked) {
     const keyboard = [];
-    
     if (isBlocked) {
         keyboard.push([{ text: '✅ Blokdan ochish', callback_data: `unblock_user_${userId}` }]);
     } else {
         keyboard.push([{ text: '🚫 Bloklash', callback_data: `block_user_${userId}` }]);
     }
-    
     keyboard.push([{ text: '🗑️ O\'chirish', callback_data: `delete_user_${userId}` }]);
     keyboard.push([{ text: '🔙 Orqaga', callback_data: 'back_to_user_list' }]);
-    
     return { reply_markup: { inline_keyboard: keyboard } };
 }
 
 function getSecurityKeyboard() {
-    const keyboard = [
-        [{ text: '👥 Ruxsat berilgan adminlar', callback_data: 'security_allowed_admins' }],
-        [{ text: '➕ Admin qo\'shish', callback_data: 'security_add_admin' }],
-        [{ text: '➖ Admin o\'chirish', callback_data: 'security_remove_admin' }],
-        [{ text: '📜 Xavfsizlik jurnali', callback_data: 'security_log' }],
-        [{ text: '🔙 Orqaga', callback_data: 'security_back' }]
-    ];
-    
-    return { reply_markup: { inline_keyboard: keyboard } };
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: '👥 Ruxsat berilgan adminlar', callback_data: 'security_allowed_admins' }],
+                [{ text: '➕ Admin qo\'shish', callback_data: 'security_add_admin' }],
+                [{ text: '➖ Admin o\'chirish', callback_data: 'security_remove_admin' }],
+                [{ text: '📜 Xavfsizlik jurnali', callback_data: 'security_log' }],
+                [{ text: '🔙 Orqaga', callback_data: 'security_back' }]
+            ]
+        }
+    };
 }
 
 // -------------------- SESSIONS --------------------
@@ -817,12 +799,6 @@ async function sendMainMenu(chatId, isAdminUser = false) {
         }
     } catch (error) {
         console.error('Menu yuborishda xatolik:', error);
-        // Xatolik bo'lsa oddiy matnli menyu
-        if (isAdminUser) {
-            await bot.sendMessage(chatId, '👑 Admin paneli\n\n/statistika - Statistika\n/users - Foydalanuvchilar\n/add_diagnostic - Diagnostika qoshish\n/close - Asosiy menyu');
-        } else {
-            await bot.sendMessage(chatId, '🏠 Asosiy menyu\n\n/profile - Mening sahifam\n/my_cars - Mening avtomobillarim\n/my_bonus - Mening bonuslarim\n/add_car - Yangi avtomobil\n/history - Diagnostika tarixi\n/info - Malumot\n/close - Asosiy menyu');
-        }
     }
 }
 
@@ -1183,7 +1159,7 @@ bot.on('message', async (msg) => {
         
         try {
             await sendReminder(chatId);
-            await bot.sendMessage(chatId, `✅ *Siz muvaffaqiyatli ro'yxatdan o'tdingiz, ${userFullName || 'hurmatli mijoz'}!*\n\n👤 Ism: ${userFullName || 'Kiritilmagan'}\n🚗 Avtomobil: ${carNumber}\n📞 Telefon: ${session.data.phone}\n\n🎁 *Bonus tizimi:* Har 5 diagnostikada 1 ta BEPUL!\n📸 *Instagram:* Bizni kuzatib boring: ${INSTAGRAM_LINK}\n👥 *Telegram guruhimiz:* Ehtiyot qismlar va yangiliklar: ${TELEGRAM_GROUP_LINK}\n\n➕ "➕ Yangi avtomobil qo'shish" tugmasi orqali yana avtomobil qo'shishingiz mumkin.\n📌 Bot versiyasi: ${BOT_VERSION}`, { parse_mode: 'Markdown' });
+            await bot.sendMessage(chatId, `✅ *Siz muvaffaqiyatli ro'yxatdan o'tdingiz, ${userFullName || 'hurmatli mijoz'}!*\n\n👤 Ism: ${userFullName || 'Kiritilmagan'}\n🚗 Avtomobil: ${carNumber}\n📞 Telefon: ${session.data.phone}\n\n🎁 *Bonus tizimi:* Har 5 diagnostikada 1 ta BEPUL!\n📸 *Instagram:* ${INSTAGRAM_LINK}\n👥 *Telegram guruhimiz:* ${TELEGRAM_GROUP_LINK}\n\n➕ "➕ Yangi avtomobil qo'shish" tugmasi orqali yana avtomobil qo'shishingiz mumkin.\n📌 Bot versiyasi: ${BOT_VERSION}`, { parse_mode: 'Markdown' });
             await sendMainMenu(chatId, false);
             
             for (const adminId of ADMIN_IDS) {
@@ -1257,7 +1233,7 @@ bot.on('message', async (msg) => {
     if (session.step === 'admin_work_description') {
         session.data.workDescription = text;
         session.step = 'admin_additional_notes';
-        await bot.sendMessage(chatId, `✅ Bajarilgan ishlar qabul qilindi:\n\n📝 *"${text}"*\n\n➕ *Qo'shimcha eslatmalar kiriting* (ixtiyoriy):\n\n"❌ Bekor qilish" - bekor qilish uchun`, { parse_mode: 'Markdown' });
+        await bot.sendMessage(chatId, `✅ Bajarilgan ishlar qabul qilindi:\n\n📝 "${text}"\n\n➕ *Qo'shimcha eslatmalar kiriting* (ixtiyoriy):\n\n"❌ Bekor qilish" - bekor qilish uchun`, { parse_mode: 'Markdown' });
         return;
     }
     
@@ -1455,7 +1431,7 @@ bot.on('message', async (msg) => {
         }
     }
     else if (text === '📸 Bizning Instagram') {
-        await bot.sendMessage(chatId, `📸 *BIZNING INSTAGRAM*\n\n🔗 ${INSTAGRAM_LINK}\n\nBizni Instagram sahifamizda kuzatib boring!`, {
+        await bot.sendMessage(chatId, `📸 *BIZNING INSTAGRAM*\n\n🔗 ${INSTAGRAM_LINK}`, {
             parse_mode: 'Markdown',
             reply_markup: {
                 inline_keyboard: [[{ text: '📸 Instagramga o\'tish', url: INSTAGRAM_LINK }]]
@@ -1463,7 +1439,7 @@ bot.on('message', async (msg) => {
         });
     }
     else if (text === '👥 Telegram guruhimiz') {
-        await bot.sendMessage(chatId, `👥 *TELEGRAM GURUHIMIZ*\n\n🔗 ${TELEGRAM_GROUP_LINK}\n\nEhtiyot qismlar, yangiliklar va foydali ma'lumotlar uchun guruhimizga qo'shiling!`, {
+        await bot.sendMessage(chatId, `👥 *TELEGRAM GURUHIMIZ*\n\n🔗 ${TELEGRAM_GROUP_LINK}`, {
             parse_mode: 'Markdown',
             reply_markup: {
                 inline_keyboard: [[{ text: '👥 Guruhga o\'tish', url: TELEGRAM_GROUP_LINK }]]
@@ -1675,10 +1651,10 @@ bot.on('callback_query', async (query) => {
     const messageId = query.message.message_id;
     const userId = query.from.id;
     
+    await bot.answerCallbackQuery(query.id);
+    
     // Xavfsizlik callback lari
     if (data === 'security_allowed_admins') {
-        await bot.answerCallbackQuery(query.id);
-        
         let msg = '👥 *RUXSAT BERILGAN ADMINLAR*\n━━━━━━━━━━━━━━━━━━\n\n';
         if (adminSettings.allowedEditors.length === 0) {
             msg += 'Hech qanday admin ruxsatga ega emas.\nFaqat Super Admin kodni o\'zgartirishi mumkin.';
@@ -1701,7 +1677,6 @@ bot.on('callback_query', async (query) => {
         });
     }
     else if (data === 'security_add_admin') {
-        await bot.answerCallbackQuery(query.id);
         await bot.editMessageText(
             `➕ *ADMIN QO'SHISH*\n\nRuxsat bermoqchi bo'lgan adminning Telegram ID sini yuboring.\n\n⚠️ Faqat Super Admin bu amalni bajarishi mumkin!\n\n❌ Bekor qilish uchun /cancel yozing.`,
             {
@@ -1716,8 +1691,6 @@ bot.on('callback_query', async (query) => {
         return;
     }
     else if (data === 'security_remove_admin') {
-        await bot.answerCallbackQuery(query.id);
-        
         if (adminSettings.allowedEditors.length === 0) {
             await bot.editMessageText(
                 `❌ *Hech qanday admin ruxsatga ega emas!*`,
@@ -1750,8 +1723,6 @@ bot.on('callback_query', async (query) => {
         return;
     }
     else if (data === 'security_log') {
-        await bot.answerCallbackQuery(query.id);
-        
         let msg = '📜 *XAVFSIZLIK JURNALI*\n━━━━━━━━━━━━━━━━━━\n\n';
         if (adminSettings.securityLog.length === 0) {
             msg += 'Hech qanday xavfsizlik hodisasi qayd etilmagan.';
@@ -1773,7 +1744,6 @@ bot.on('callback_query', async (query) => {
         });
     }
     else if (data === 'security_back') {
-        await bot.answerCallbackQuery(query.id);
         await bot.editMessageText(
             `🔐 *XAVFSIZLIK SOZLAMALARI*\n\n` +
             `👑 Super Admin ID: ${SUPER_ADMIN_ID}\n` +
@@ -1809,7 +1779,6 @@ bot.on('callback_query', async (query) => {
         );
     }
     else if (data === 'confirm_update') {
-        await bot.answerCallbackQuery(query.id);
         await bot.sendMessage(chatId, '📢 *Yangilanish boshlandi...*\n\nBarcha foydalanuvchilarga xabar yuborilmoqda...', { parse_mode: 'Markdown' });
         
         const result = await notifyAllUsersAboutUpdate();
@@ -1830,18 +1799,15 @@ bot.on('callback_query', async (query) => {
         await sendMainMenu(chatId, true);
     }
     else if (data === 'cancel_update') {
-        await bot.answerCallbackQuery(query.id);
         await bot.deleteMessage(chatId, messageId);
         await bot.sendMessage(chatId, '❌ *Yangilanish bekor qilindi.*', { parse_mode: 'Markdown' });
         await sendMainMenu(chatId, true);
     }
     else if (data === 'contact_admin') {
-        await bot.answerCallbackQuery(query.id);
         await bot.sendMessage(chatId, `📞 *Admin bilan bog'lanish*\n\nTelefon: ${ADMIN_PHONE}\n\nSavollaringiz bo'lsa, ushbu raqam orqali bog'lanishingiz mumkin.`, { parse_mode: 'Markdown' });
     }
     else if (data.startsWith('restore_')) {
         const backupName = data.replace('restore_', '');
-        await bot.answerCallbackQuery(query.id);
         await bot.sendMessage(chatId, '🔄 *Database tiklanmoqda...*\n\n⚠️ Bu jarayon bir necha daqiqa vaqt olishi mumkin.', { parse_mode: 'Markdown' });
         
         if (restoreBackup(backupName)) {
@@ -1852,17 +1818,14 @@ bot.on('callback_query', async (query) => {
         }
     } 
     else if (data === 'restore_cancel') {
-        await bot.answerCallbackQuery(query.id);
         await bot.sendMessage(chatId, '❌ *Database tiklash bekor qilindi.*', { parse_mode: 'Markdown' });
         await sendMainMenu(chatId, true);
     }
     else if (data === 'user_manage_cancel') {
-        await bot.answerCallbackQuery(query.id);
         await bot.deleteMessage(chatId, messageId);
         await sendMainMenu(chatId, true);
     }
     else if (data === 'back_to_user_list') {
-        await bot.answerCallbackQuery(query.id);
         const activeUsers = getActiveUsers();
         const blockedUsers = getBlockedUsers();
         const allUsers = [...activeUsers, ...blockedUsers];
@@ -1886,7 +1849,6 @@ bot.on('callback_query', async (query) => {
         const blockedUsers = getBlockedUsers();
         const allUsers = [...activeUsers, ...blockedUsers];
         
-        await bot.answerCallbackQuery(query.id);
         await bot.editMessageReplyMarkup(
             getUserManagementKeyboard(allUsers, page).reply_markup,
             { chat_id: chatId, message_id: messageId }
@@ -1900,8 +1862,6 @@ bot.on('callback_query', async (query) => {
             await bot.answerCallbackQuery(query.id, { text: 'Foydalanuvchi topilmadi!', show_alert: true });
             return;
         }
-        
-        await bot.answerCallbackQuery(query.id);
         
         const userInfo = 
             `👤 *${user.fullName || 'Ismsiz foydalanuvchi'}*\n\n` +
@@ -1991,12 +1951,11 @@ bot.on('callback_query', async (query) => {
             reply_markup: {
                 inline_keyboard: [
                     [{ text: '✅ Ha, o\'chirish', callback_data: `confirm_delete_${targetUserId}` }],
-                    [{ text: '❌ Yo\'q, bekor qilish', callback_data: `back_to_user_list` }]
+                    [{ text: '❌ Yo\'q, bekor qilish', callback_data: 'back_to_user_list' }]
                 ]
             }
         };
         
-        await bot.answerCallbackQuery(query.id);
         await bot.editMessageText(
             `⚠️ *DIQQAT!*\n\nSiz foydalanuvchini butunlay o\'chirmoqchisiz!\n\n` +
             `Bu amalni ortga qaytarib bo'lmaydi.\n` +
@@ -2085,18 +2044,9 @@ console.log('='.repeat(60));
 console.log('🚗 ISUZU DOCTOR BOT ISHGA TUSHDI');
 console.log('='.repeat(60));
 console.log(`📌 Versiya: ${BOT_VERSION}`);
-console.log(`🔗 Bot linki: ${NEW_BOT_LINK}`);
-console.log(`📸 Instagram: ${INSTAGRAM_LINK}`);
-console.log(`👥 Telegram guruhi: ${TELEGRAM_GROUP_LINK}`);
-console.log(`👑 Admin telefon: ${ADMIN_PHONE}`);
-console.log(`🔐 Super Admin ID: ${SUPER_ADMIN_ID}`);
-console.log(`👥 Ruxsat berilgan adminlar: ${adminSettings.allowedEditors.length} ta`);
-console.log(`💰 Diagnostika narxi: ${DIAGNOSTIC_PRICE.toLocaleString()} so'm`);
-console.log(`👥 Faol foydalanuvchilar: ${users.filter(u => !u.isAdmin && !u.isBlocked).length}`);
-console.log(`🚫 Bloklanganlar: ${users.filter(u => !u.isAdmin && u.isBlocked).length}`);
-console.log(`🚗 Avtomobillar: ${users.reduce((sum, u) => sum + (u.cars ? u.cars.length : 0), 0)}`);
+console.log(`👑 Adminlar: ${ADMIN_IDS.join(', ')}`);
+console.log(`👥 Foydalanuvchilar: ${users.filter(u => !u.isAdmin).length}`);
 console.log(`🔧 Diagnostikalar: ${diagnostics.length}`);
 console.log(`💾 Volume manzili: ${VOLUME_PATH}`);
-console.log(`🔄 Yangilanish rejimi: ${isUpdateMode ? 'Faol' : 'O\'chirilgan'}`);
 console.log('='.repeat(60));
 console.log('✅ Bot ishlashga tayyor!');
