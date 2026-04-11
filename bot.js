@@ -653,71 +653,65 @@ function getAllUsersWithDetails() {
     }));
 }
 
-// ======================== SAMSUNG TELEFONLAR UCHUN REPLY KEYBOARD ========================
-// Samsung uchun maxsus sozlamalar:
-// - har bir tugma alohida qatorda
-// - input_field_placeholder qo'shilgan
-// - is_persistent true qilingan
-
+// ======================== REPLY KEYBOARD ========================
+// Foydalanuvchi uchun reply keyboard (Android uchun optimallashtirilgan)
 function getUserReplyKeyboard() {
     return {
         reply_markup: {
             keyboard: [
-                [{ text: '📊 Mening sahifam' }],
-                [{ text: '🚗 Mening avtomobillarim' }],
-                [{ text: '🎁 Mening bonuslarim' }],
-                [{ text: '➕ Yangi avtomobil qo\'shish' }],
-                [{ text: '📋 Diagnostika tarixim' }],
-                [{ text: '📸 Bizning Instagram' }],
-                [{ text: '👥 Telegram guruhimiz' }],
-                [{ text: 'ℹ️ Ma\'lumot' }],
-                [{ text: '❌ Asosiy menyu' }]
+                ['📊 Mening sahifam'],
+                ['🚗 Mening avtomobillarim'],
+                ['🎁 Mening bonuslarim'],
+                ['➕ Yangi avtomobil qo\'shish'],
+                ['📋 Diagnostika tarixim'],
+                ['📸 Bizning Instagram'],
+                ['👥 Telegram guruhimiz'],
+                ['ℹ️ Ma\'lumot'],
+                ['❌ Asosiy menyu']
             ],
             resize_keyboard: true,
             one_time_keyboard: false,
-            selective: false,
-            is_persistent: true,
-            input_field_placeholder: "Menyudan tanlang..."
+            is_persistent: true
         }
     };
 }
 
+// Admin uchun reply keyboard
 function getAdminReplyKeyboard() {
     const keyboard = [
-        [{ text: '📊 Statistika' }],
-        [{ text: '👥 Foydalanuvchilar' }],
-        [{ text: '🔧 Diagnostika qo\'shish' }],
-        [{ text: '🎁 Bonusga yaqinlar' }],
-        [{ text: '⚠️ Xatoliklar' }],
-        [{ text: '📋 Diagnostikalar tarixi' }],
-        [{ text: '📅 Bugungi diagnostikalar' }],
-        [{ text: '📄 Hisobot olish' }],
-        [{ text: '💾 Backup yaratish' }],
-        [{ text: '🔄 Database tiklash' }],
-        [{ text: '🚫 Foydalanuvchini boshqarish' }],
-        [{ text: '🔐 Xavfsizlik' }]
+        ['📊 Statistika'],
+        ['👥 Foydalanuvchilar'],
+        ['🔧 Diagnostika qo\'shish'],
+        ['🎁 Bonusga yaqinlar'],
+        ['⚠️ Xatoliklar'],
+        ['📋 Diagnostikalar tarixi'],
+        ['📅 Bugungi diagnostikalar'],
+        ['📄 Hisobot olish'],
+        ['💾 Backup yaratish'],
+        ['🔄 Database tiklash'],
+        ['🚫 Foydalanuvchini boshqarish'],
+        ['🔐 Xavfsizlik']
     ];
     
     if (!isUpdateMode) {
-        keyboard.push([{ text: '🚀 Yangi versiyaga o\'tish' }]);
+        keyboard.push(['🚀 Yangi versiyaga o\'tish']);
     } else {
-        keyboard.push([{ text: '✅ Yangilanish rejimini o\'chirish' }]);
+        keyboard.push(['✅ Yangilanish rejimini o\'chirish']);
     }
     
-    keyboard.push([{ text: '❌ Asosiy menyu' }]);
+    keyboard.push(['❌ Asosiy menyu']);
     
     return {
         reply_markup: {
             keyboard: keyboard,
             resize_keyboard: true,
             one_time_keyboard: false,
-            selective: false,
-            is_persistent: true,
-            input_field_placeholder: "Menyudan tanlang..."
+            is_persistent: true
         }
     };
 }
 
+// Telefon raqamini so'rash uchun keyboard
 function getPhoneKeyboard() {
     return {
         reply_markup: {
@@ -725,13 +719,12 @@ function getPhoneKeyboard() {
                 [{ text: '📱 Telefon raqamini yuborish', request_contact: true }]
             ],
             resize_keyboard: true,
-            one_time_keyboard: true,
-            selective: false,
-            input_field_placeholder: "Telefon raqamini yuboring..."
+            one_time_keyboard: true
         }
     };
 }
 
+// Keyboardni tozalash
 function removeKeyboard() {
     return {
         reply_markup: {
@@ -740,7 +733,7 @@ function removeKeyboard() {
     };
 }
 
-// Asosiy menyuni yuborish
+// Asosiy menyuni yuborish (reply keyboard bilan)
 async function sendMainMenu(chatId, isAdminUser = false) {
     try {
         await sendReminder(chatId);
@@ -758,12 +751,6 @@ async function sendMainMenu(chatId, isAdminUser = false) {
         }
     } catch (error) {
         console.error('Menu yuborishda xatolik:', error);
-        // Xatolik bo'lsa matnli menyu
-        if (isAdminUser) {
-            await bot.sendMessage(chatId, '👑 Admin paneli\n\n/statistika - Statistika\n/users - Foydalanuvchilar\n/add_diagnostic - Diagnostika qoshish\n/close - Asosiy menyu');
-        } else {
-            await bot.sendMessage(chatId, '🏠 Asosiy menyu\n\n/profile - Mening sahifam\n/my_cars - Mening avtomobillarim\n/my_bonus - Mening bonuslarim\n/add_car - Yangi avtomobil\n/history - Diagnostika tarixi\n/info - Malumot\n/close - Asosiy menyu');
-        }
     }
 }
 
