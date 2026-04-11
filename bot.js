@@ -653,44 +653,58 @@ function getAllUsersWithDetails() {
     }));
 }
 
-// ======================== REPLY KEYBOARDS - ANDROID UCHUN MAXSUS ========================
-// Foydalanuvchi uchun reply keyboard - sodda va ishonchli
+// ======================== SAMSUNG TELEFONLAR UCHUN REPLY KEYBOARD ========================
+// Samsung uchun maxsus sozlamalar:
+// - har bir tugma alohida qatorda
+// - input_field_placeholder qo'shilgan
+// - is_persistent true qilingan
+
 function getUserReplyKeyboard() {
     return {
         reply_markup: {
             keyboard: [
-                ['📊 Mening sahifam', '🚗 Mening avtomobillarim'],
-                ['🎁 Mening bonuslarim', '➕ Yangi avtomobil qo\'shish'],
-                ['📋 Diagnostika tarixim', '📸 Bizning Instagram'],
-                ['👥 Telegram guruhimiz', 'ℹ️ Ma\'lumot'],
-                ['❌ Asosiy menyu']
+                [{ text: '📊 Mening sahifam' }],
+                [{ text: '🚗 Mening avtomobillarim' }],
+                [{ text: '🎁 Mening bonuslarim' }],
+                [{ text: '➕ Yangi avtomobil qo\'shish' }],
+                [{ text: '📋 Diagnostika tarixim' }],
+                [{ text: '📸 Bizning Instagram' }],
+                [{ text: '👥 Telegram guruhimiz' }],
+                [{ text: 'ℹ️ Ma\'lumot' }],
+                [{ text: '❌ Asosiy menyu' }]
             ],
             resize_keyboard: true,
             one_time_keyboard: false,
             selective: false,
-            is_persistent: true
+            is_persistent: true,
+            input_field_placeholder: "Menyudan tanlang..."
         }
     };
 }
 
-// Admin uchun reply keyboard
 function getAdminReplyKeyboard() {
     const keyboard = [
-        ['📊 Statistika', '👥 Foydalanuvchilar'],
-        ['🔧 Diagnostika qo\'shish', '🎁 Bonusga yaqinlar'],
-        ['⚠️ Xatoliklar', '📋 Diagnostikalar tarixi'],
-        ['📅 Bugungi diagnostikalar', '📄 Hisobot olish'],
-        ['💾 Backup yaratish', '🔄 Database tiklash'],
-        ['🚫 Foydalanuvchini boshqarish', '🔐 Xavfsizlik']
+        [{ text: '📊 Statistika' }],
+        [{ text: '👥 Foydalanuvchilar' }],
+        [{ text: '🔧 Diagnostika qo\'shish' }],
+        [{ text: '🎁 Bonusga yaqinlar' }],
+        [{ text: '⚠️ Xatoliklar' }],
+        [{ text: '📋 Diagnostikalar tarixi' }],
+        [{ text: '📅 Bugungi diagnostikalar' }],
+        [{ text: '📄 Hisobot olish' }],
+        [{ text: '💾 Backup yaratish' }],
+        [{ text: '🔄 Database tiklash' }],
+        [{ text: '🚫 Foydalanuvchini boshqarish' }],
+        [{ text: '🔐 Xavfsizlik' }]
     ];
     
     if (!isUpdateMode) {
-        keyboard.push(['🚀 Yangi versiyaga o\'tish']);
+        keyboard.push([{ text: '🚀 Yangi versiyaga o\'tish' }]);
     } else {
-        keyboard.push(['✅ Yangilanish rejimini o\'chirish']);
+        keyboard.push([{ text: '✅ Yangilanish rejimini o\'chirish' }]);
     }
     
-    keyboard.push(['❌ Asosiy menyu']);
+    keyboard.push([{ text: '❌ Asosiy menyu' }]);
     
     return {
         reply_markup: {
@@ -698,12 +712,12 @@ function getAdminReplyKeyboard() {
             resize_keyboard: true,
             one_time_keyboard: false,
             selective: false,
-            is_persistent: true
+            is_persistent: true,
+            input_field_placeholder: "Menyudan tanlang..."
         }
     };
 }
 
-// Telefon raqamini so'rash uchun keyboard
 function getPhoneKeyboard() {
     return {
         reply_markup: {
@@ -712,12 +726,12 @@ function getPhoneKeyboard() {
             ],
             resize_keyboard: true,
             one_time_keyboard: true,
-            selective: false
+            selective: false,
+            input_field_placeholder: "Telefon raqamini yuboring..."
         }
     };
 }
 
-// Keyboardni tozalash
 function removeKeyboard() {
     return {
         reply_markup: {
@@ -726,50 +740,25 @@ function removeKeyboard() {
     };
 }
 
-// Asosiy menyuni yuborish - reply keyboard bilan
+// Asosiy menyuni yuborish
 async function sendMainMenu(chatId, isAdminUser = false) {
     try {
         await sendReminder(chatId);
         
-        let menuMessage = '';
-        let keyboard = null;
-        
         if (isAdminUser) {
-            menuMessage = '👑 *Admin paneliga xush kelibsiz!*\n\nQuyidagi tugmalardan foydalaning:';
-            keyboard = getAdminReplyKeyboard();
+            await bot.sendMessage(chatId, '👑 *Admin paneliga xush kelibsiz!*\n\nQuyidagi tugmalardan foydalaning:', {
+                parse_mode: 'Markdown',
+                ...getAdminReplyKeyboard()
+            });
         } else {
-            menuMessage = `🏠 *Asosiy menyu* (Versiya ${BOT_VERSION})\n\n🚗 ISUZU DOCTOR botiga xush kelibsiz!\n\nQuyidagi tugmalardan birini tanlang:`;
-            keyboard = getUserReplyKeyboard();
-        }
-        
-        // Keyboardni bir necha marta yuborishga urinib ko'rish
-        let sent = false;
-        for (let i = 0; i < 3; i++) {
-            try {
-                await bot.sendMessage(chatId, menuMessage, {
-                    parse_mode: 'Markdown',
-                    ...keyboard
-                });
-                sent = true;
-                break;
-            } catch (err) {
-                console.log(`Menu yuborish urinish ${i + 1} xato:`, err.message);
-                if (i === 2) {
-                    // Oxirgi urinishda keyboard'siz yuborish
-                    await bot.sendMessage(chatId, menuMessage + '\n\n⚠️ Tugmalar ko\'rinmasa, quyidagi buyruqlardan foydalaning:\n/profile - Mening sahifam\n/my_cars - Avtomobillarim\n/my_bonus - Bonuslarim\n/history - Tarix\n/info - Ma\'lumot', {
-                        parse_mode: 'Markdown'
-                    });
-                }
-            }
-            await new Promise(resolve => setTimeout(resolve, 500));
-        }
-        
-        if (!sent) {
-            console.log('Menu yuborilmadi!');
+            await bot.sendMessage(chatId, `🏠 *Asosiy menyu* (Versiya ${BOT_VERSION})\n\n🚗 ISUZU DOCTOR botiga xush kelibsiz!\n\nQuyidagi tugmalardan birini tanlang:`, {
+                parse_mode: 'Markdown',
+                ...getUserReplyKeyboard()
+            });
         }
     } catch (error) {
         console.error('Menu yuborishda xatolik:', error);
-        // Xatolik bo'lsa matnli menyu yuborish
+        // Xatolik bo'lsa matnli menyu
         if (isAdminUser) {
             await bot.sendMessage(chatId, '👑 Admin paneli\n\n/statistika - Statistika\n/users - Foydalanuvchilar\n/add_diagnostic - Diagnostika qoshish\n/close - Asosiy menyu');
         } else {
