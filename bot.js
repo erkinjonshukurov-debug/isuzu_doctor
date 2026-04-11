@@ -6,7 +6,7 @@ const fs = require('fs');
 const BOT_VERSION = "1.0.0";
 const NEW_BOT_LINK = "https://t.me/Isuzu_doctor_bot";
 const INSTAGRAM_LINK = "https://www.instagram.com/isuzu.samarkand";
-const TELEGRAM_GROUP_LINK = "https://t.me/+piY0W4XrGqFkN2Iy"; // YANGI LINK
+const TELEGRAM_GROUP_LINK = "https://t.me/+piY0W4XrGqFkN2Iy";
 
 // -------------------- XAVFSIZLIK VA ADMIN --------------------
 const BOT_TOKEN = process.env.BOT_TOKEN || '8779251766:AAH12INusgBCawsk5awqIjcyHnNLiq5A33A';
@@ -66,7 +66,7 @@ ensureVolumeDir();
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 bot.deleteWebHook().catch(e => console.log('Webhook xatolik:', e.message));
 
-// -------------------- HISOBOT YARATISH (TO'LIQ MATN BILAN) --------------------
+// -------------------- HISOBOT YARATISH --------------------
 async function generateDiagnosticsReport(diagnosticsList) {
     return new Promise((resolve, reject) => {
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
@@ -80,7 +80,6 @@ async function generateDiagnosticsReport(diagnosticsList) {
         content += `Yaratilgan sana: ${new Date().toLocaleString()}\n`;
         content += `Jami diagnostikalar: ${diagnosticsList.length} ta\n\n`;
         
-        // Statistika
         const paidCount = diagnosticsList.filter(d => !d.isFree).length;
         const freeCount = diagnosticsList.filter(d => d.isFree).length;
         const totalIncome = diagnosticsList.filter(d => !d.isFree).reduce((sum, d) => sum + d.price, 0);
@@ -90,7 +89,6 @@ async function generateDiagnosticsReport(diagnosticsList) {
         content += `Bepul diagnostikalar: ${freeCount} ta\n`;
         content += `Umumiy daromad: ${totalIncome.toLocaleString()} som\n\n`;
         
-        // Diagnostikalar ro'yxati (TO'LIQ MATN BILAN, qisqartirilmaydi)
         content += '----------------------- DIAGNOSTIKALAR RO\'YXATI -----------------------\n';
         content += '='.repeat(80) + '\n\n';
         
@@ -100,10 +98,10 @@ async function generateDiagnosticsReport(diagnosticsList) {
             content += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
             content += `📆 Sana: ${new Date(diag.date).toLocaleString()}\n`;
             content += `🚗 Avtomobil raqami: ${diag.carNumber}\n`;
-            content += `📝 Bajarilgan ishlar:\n${diag.workDescription}\n`;  // TO'LIQ MATN
+            content += `📝 Bajarilgan ishlar:\n${diag.workDescription}\n`;
             
             if (diag.additionalNotes && diag.additionalNotes !== '') {
-                content += `\n➕ Qo'shimcha eslatmalar:\n${diag.additionalNotes}\n`;  // TO'LIQ MATN
+                content += `\n➕ Qo'shimcha eslatmalar:\n${diag.additionalNotes}\n`;
             }
             
             content += `\n💰 Narx: ${diag.isFree ? 'BEPUL' : diag.price.toLocaleString() + ' so\'m'}\n`;
@@ -655,8 +653,9 @@ function getAllUsersWithDetails() {
     }));
 }
 
-// -------------------- KEYBOARDS --------------------
+// -------------------- KEYBOARDS (ANDROID UCHUN OPTIMALLASHTIRILGAN) --------------------
 function getAdminKeyboard() {
+    // Android uchun har bir qatorda 2 tadan tugma
     const keyboard = [
         ['📊 Statistika', '👥 Foydalanuvchilar'],
         ['🔧 Diagnostika qo\'shish', '🎁 Bonusga yaqinlar'],
@@ -678,13 +677,15 @@ function getAdminKeyboard() {
         reply_markup: {
             keyboard: keyboard,
             resize_keyboard: true,
-            one_time_keyboard: false,
-            selective: true
+            one_time_keyboard: true,
+            selective: true,
+            is_persistent: false
         }
     };
 }
 
 function getUserKeyboard() {
+    // Android uchun optimallashtirilgan - har bir qatorda 2 tadan tugma
     return {
         reply_markup: {
             keyboard: [
@@ -695,8 +696,9 @@ function getUserKeyboard() {
                 ['❌ Asosiy menyu']
             ],
             resize_keyboard: true,
-            one_time_keyboard: false,
+            one_time_keyboard: true,
             selective: true,
+            is_persistent: false,
             input_field_placeholder: "Menyudan tanlang..."
         }
     };
@@ -708,7 +710,7 @@ function getPhoneKeyboard() {
             keyboard: [
                 [{ text: '📱 Telefon raqamini yuborish', request_contact: true }]
             ],
-            resize_keyboard: false,    
+            resize_keyboard: true,
             one_time_keyboard: true,
             selective: false
         }
@@ -794,16 +796,6 @@ function clearUserSession(userId) {
     userSessions.delete(userId);
 }
 
-async function clearKeyboard(chatId) {
-    try {
-        await bot.sendMessage(chatId, '⏳', {
-            reply_markup: { remove_keyboard: true }
-        });
-    } catch (error) {
-        console.error('Keyboard tozalash xatolik:', error);
-    }
-}
-
 async function sendMainMenu(chatId, isAdminUser = false) {
     try {
         await sendReminder(chatId);
@@ -821,6 +813,12 @@ async function sendMainMenu(chatId, isAdminUser = false) {
         }
     } catch (error) {
         console.error('Menu yuborishda xatolik:', error);
+        // Xatolik bo'lsa oddiy matnli menyu yuborish
+        if (isAdminUser) {
+            await bot.sendMessage(chatId, '👑 Admin paneli\n\n/statistika - Statistika\n/users - Foydalanuvchilar\n/add_diagnostic - Diagnostika qoshish\n/close - Asosiy menyu');
+        } else {
+            await bot.sendMessage(chatId, '🏠 Asosiy menyu\n\n/profile - Mening sahifam\n/my_cars - Mening avtomobillarim\n/my_bonus - Mening bonuslarim\n/add_car - Yangi avtomobil\n/history - Diagnostika tarixi\n/info - Malumot\n/close - Asosiy menyu');
+        }
     }
 }
 
@@ -965,7 +963,7 @@ bot.on('contact', async (msg) => {
     }
 });
 
-// -------------------- MATNLI BUYRUQLAR (TO'LIQ MATN BILAN) --------------------
+// -------------------- MATNLI BUYRUQLAR --------------------
 bot.onText(/\/profile/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -1057,7 +1055,6 @@ bot.onText(/\/my_bonus/, async (msg) => {
     await bot.sendMessage(chatId, bonusText, { parse_mode: 'Markdown' });
 });
 
-// DIAGNOSTIKA TARIXI - TO'LIQ MATN BILAN
 bot.onText(/\/history/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -1079,10 +1076,10 @@ bot.onText(/\/history/, async (msg) => {
         let diagText = `📅 *${new Date(d.date).toLocaleDateString()}*\n`;
         diagText += `🕐 ${new Date(d.date).toLocaleTimeString()}\n`;
         diagText += `🚗 *${d.carNumber}*\n\n`;
-        diagText += `📝 *Bajarilgan ishlar:*\n${d.workDescription}\n\n`;  // TO'LIQ MATN
+        diagText += `📝 *Bajarilgan ishlar:*\n${d.workDescription}\n\n`;
         
         if (d.additionalNotes && d.additionalNotes !== '') {
-            diagText += `➕ *Qo'shimcha eslatmalar:*\n${d.additionalNotes}\n\n`;  // TO'LIQ MATN
+            diagText += `➕ *Qo'shimcha eslatmalar:*\n${d.additionalNotes}\n\n`;
         }
         
         diagText += `💰 *Narx:* ${d.price > 0 ? d.price.toLocaleString() + ' so\'m' : 'BEPUL'}\n`;
@@ -1147,7 +1144,7 @@ bot.onText(/\/add_diagnostic/, async (msg) => {
     await bot.sendMessage(chatId, '🔧 *Diagnostika qo\'shish*\n\n🚗 Avtomobil raqamini kiriting:', { parse_mode: 'Markdown', reply_markup: { remove_keyboard: true } });
 });
 
-// -------------------- XABARLARNI QAYTA ISHLASH (TO'LIQ MATN BILAN) --------------------
+// -------------------- XABARLARNI QAYTA ISHLASH --------------------
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -1277,7 +1274,6 @@ bot.on('message', async (msg) => {
             return;
         }
         
-        // ADMINGA XABAR - TO'LIQ MATN
         let adminResponse = `🔧 *DIAGNOSTIKA QO'SHILDI*\n\n👤 ${session.data.targetUser.fullName || 'Ism kiritilmagan'}\n🚗 ${result.carNumber}\n📞 ${session.data.targetUser.phone}\n💰 Narx: ${result.price.toLocaleString()} so'm\n\n📝 *Bajarilgan ishlar:*\n${session.data.workDescription}\n`;
         
         if (session.data.additionalNotes && session.data.additionalNotes !== '') {
@@ -1298,7 +1294,6 @@ bot.on('message', async (msg) => {
         
         await bot.sendMessage(chatId, adminResponse, { parse_mode: 'Markdown' });
         
-        // FOYDALANUVCHIGA XABAR - TO'LIQ MATN
         let userMsg = `🔧 *DIAGNOSTIKA NATIJALARI*\n\n`;
         userMsg += `🚗 *Avtomobil:* ${result.carNumber}\n`;
         userMsg += `📅 *Sana:* ${new Date().toLocaleString()}\n\n`;
@@ -1443,10 +1438,10 @@ bot.on('message', async (msg) => {
             let diagText = `📅 *${new Date(d.date).toLocaleDateString()}*\n`;
             diagText += `🕐 ${new Date(d.date).toLocaleTimeString()}\n`;
             diagText += `🚗 *${d.carNumber}*\n\n`;
-            diagText += `📝 *Bajarilgan ishlar:*\n${d.workDescription}\n\n`;  // TO'LIQ MATN
+            diagText += `📝 *Bajarilgan ishlar:*\n${d.workDescription}\n\n`;
             
             if (d.additionalNotes && d.additionalNotes !== '') {
-                diagText += `➕ *Qo'shimcha eslatmalar:*\n${d.additionalNotes}\n\n`;  // TO'LIQ MATN
+                diagText += `➕ *Qo'shimcha eslatmalar:*\n${d.additionalNotes}\n\n`;
             }
             
             diagText += `💰 *Narx:* ${d.price > 0 ? d.price.toLocaleString() + ' so\'m' : 'BEPUL'}\n`;
