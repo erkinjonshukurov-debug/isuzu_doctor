@@ -9,6 +9,8 @@ const INSTAGRAM_LINK = "https://www.instagram.com/isuzu.samarkand";
 const TELEGRAM_GROUP_LINK = "https://t.me/+piY0W4XrGqFkN2Iy";
 
 // -------------------- TOKEN VA ADMIN --------------------
+// TOKENNI TEKSHIRING - BU TOKEN NOTO'G'RI BO'LISHI MUMKIN
+// Yangi token olish uchun @BotFather ga murojaat qiling
 const BOT_TOKEN = process.env.BOT_TOKEN || '8779251766:AAH12INusgBCawsk5awqIjcyHnNLiq5A33A';
 
 const ADMIN_PHONE = "+998979247888";
@@ -26,7 +28,6 @@ const DIAGNOSTICS_FILE = path.join(VOLUME_PATH, 'diagnostics.json');
 const ERRORS_FILE = path.join(VOLUME_PATH, 'errors.json');
 const VERSION_FILE = path.join(VOLUME_PATH, 'version.json');
 const ADMIN_SETTINGS_FILE = path.join(VOLUME_PATH, 'admin_settings.json');
-const VERSION_HISTORY_FILE = path.join(VOLUME_PATH, 'version_history.json');
 const LOCATIONS_FILE = path.join(VOLUME_PATH, 'locations.json');
 
 // -------------------- DEFAULT LOKATSIYALAR --------------------
@@ -48,7 +49,6 @@ let users = [];
 let diagnostics = [];
 let errors = [];
 let locations = [];
-let versionHistory = [];
 let currentVersion = BOT_VERSION;
 let isUpdateMode = false;
 
@@ -90,8 +90,24 @@ function ensureVolumeDir() {
 
 ensureVolumeDir();
 
-const bot = new TelegramBot(BOT_TOKEN, { polling: true });
-bot.deleteWebHook().catch(e => console.log('Webhook xatolik:', e.message));
+// Botni ishga tushirishdan oldin tokenni tekshirish
+console.log('🔑 Bot tokeni tekshirilmoqda...');
+console.log(`📌 Token uzunligi: ${BOT_TOKEN.length}`);
+console.log(`📌 Token formati: ${BOT_TOKEN.substring(0, 10)}...`);
+
+let bot;
+try {
+    bot = new TelegramBot(BOT_TOKEN, { polling: true });
+    console.log('✅ Bot yaratildi');
+} catch (err) {
+    console.error('❌ Bot yaratishda xatolik:', err.message);
+    process.exit(1);
+}
+
+// Webhook xatoliklarini ignore qilish
+bot.deleteWebHook().catch(e => {
+    console.log('⚠️ Webhook xatolik (ahamiyatsiz):', e.message);
+});
 
 // ======================== LOKATSIYA FUNKSIYALARI ========================
 function loadLocations() {
@@ -366,14 +382,6 @@ function addCarToUser(phoneNumber, carNumber, userInfo = {}) {
         return { success: false, message: 'Bu avtomobil raqami allaqachon qo\'shilgan!' };
     }
     
-    if (userInfo.firstName && !user.firstName) {
-        user.firstName = userInfo.firstName;
-        user.lastName = userInfo.lastName || '';
-        user.username = userInfo.username || '';
-        user.fullName = `${userInfo.firstName || ''} ${userInfo.lastName || ''}`.trim();
-        saveUsers();
-    }
-    
     user.cars.push({
         carId: Date.now(),
         carNumber: carNumber,
@@ -638,7 +646,6 @@ function getAdminKeyboard() {
                 ['📅 Bugungi diagnostikalar', '📄 Hisobot olish'],
                 ['💾 Backup yaratish', '🔄 Database tiklash'],
                 ['🚫 Foydalanuvchini boshqarish', '📍 Lokatsiyalar'],
-                ['🔐 Xavfsizlik', '📜 Versiya tarixi'],
                 ['❌ Asosiy menyu']
             ],
             resize_keyboard: true,
@@ -715,28 +722,11 @@ function getUserActionKeyboard(userId, isBlocked) {
     return { reply_markup: { inline_keyboard: keyboard } };
 }
 
-function getSecurityKeyboard() {
-    return {
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: '👥 Ruxsat berilgan adminlar', callback_data: 'security_allowed_admins' }],
-                [{ text: '➕ Admin qo\'shish', callback_data: 'security_add_admin' }],
-                [{ text: '➖ Admin o\'chirish', callback_data: 'security_remove_admin' }],
-                [{ text: '📜 Xavfsizlik jurnali', callback_data: 'security_log' }],
-                [{ text: '🔙 Orqaga', callback_data: 'security_back' }]
-            ]
-        }
-    };
-}
-
 function getLocationsManagementKeyboard() {
     return {
         reply_markup: {
             inline_keyboard: [
-                [{ text: '➕ Yangi lokatsiya qo\'shish', callback_data: 'location_add' }],
-                [{ text: '✏️ Lokatsiyani tahrirlash', callback_data: 'location_edit' }],
-                [{ text: '🗑️ Lokatsiyani o\'chirish', callback_data: 'location_delete' }],
-                [{ text: '👁️ Barcha lokatsiyalar', callback_data: 'location_list_all' }],
+                [{ text: '📍 Barcha lokatsiyalar', callback_data: 'location_list_all' }],
                 [{ text: '🔙 Orqaga', callback_data: 'location_back' }]
             ]
         }
@@ -1013,7 +1003,6 @@ bot.on('message', async (msg) => {
         } else {
             await bot.sendMessage(chatId, `✅ *Diagnostika qo'shildi!*\n\n🚗 ${result.carNumber}\n💰 Narx: ${result.price.toLocaleString()} so'm\n${result.bonusMessage}`, { parse_mode: 'Markdown' });
             
-            // Foydalanuvchiga xabar
             const userMsg = `🔧 *DIAGNOSTIKA NATIJALARI*\n\n🚗 *Avtomobil:* ${result.carNumber}\n📅 *Sana:* ${new Date().toLocaleString()}\n\n📝 *Bajarilgan ishlar:*\n${session.data.workDescription}\n\n💰 *Narx:* ${result.price.toLocaleString()} so'm\n\n${result.bonusMessage}`;
             bot.sendMessage(session.data.targetUser.userId, userMsg, { parse_mode: 'Markdown' }).catch(() => {});
         }
@@ -1213,12 +1202,6 @@ bot.on('message', async (msg) => {
     else if (text === '📍 Lokatsiyalar') {
         await bot.sendMessage(chatId, '📍 *LOKATSIYALARNI BOSHQARISH*\n\nQuyidagi amallardan birini tanlang:', { parse_mode: 'Markdown', ...getLocationsManagementKeyboard() });
     }
-    else if (text === '🔐 Xavfsizlik') {
-        await bot.sendMessage(chatId, '🔐 *XAVFSIZLIK SOZLAMALARI*\n\nQuyidagi amallardan birini tanlang:', { parse_mode: 'Markdown', ...getSecurityKeyboard() });
-    }
-    else if (text === '📜 Versiya tarixi') {
-        await bot.sendMessage(chatId, `📌 *Versiya:* ${currentVersion}\n📅 Oxirgi yangilanish: ${new Date().toLocaleString()}`, { parse_mode: 'Markdown' });
-    }
     else if (text === '❌ Asosiy menyu') {
         await sendMainMenu(chatId, true);
     }
@@ -1229,7 +1212,6 @@ bot.on('callback_query', async (query) => {
     const chatId = query.message.chat.id;
     const data = query.data;
     const messageId = query.message.message_id;
-    const userId = query.from.id;
     
     await bot.answerCallbackQuery(query.id);
     
@@ -1303,89 +1285,12 @@ bot.on('callback_query', async (query) => {
         await bot.deleteMessage(chatId, messageId);
         await sendMainMenu(chatId, true);
     }
-    else if (data === 'location_add') {
-        await bot.sendMessage(chatId, '📍 *Yangi lokatsiya qo\'shish* funksiyasi tez orada!', { parse_mode: 'Markdown' });
-    }
-    else if (data === 'location_edit') {
-        await bot.sendMessage(chatId, '✏️ *Lokatsiyani tahrirlash* funksiyasi tez orada!', { parse_mode: 'Markdown' });
-    }
-    else if (data === 'location_delete') {
-        await bot.sendMessage(chatId, '🗑️ *Lokatsiyani o\'chirish* funksiyasi tez orada!', { parse_mode: 'Markdown' });
-    }
     else if (data === 'location_list_all') {
         let msg = '📍 *BARACHA LOKATSIYALAR*\n━━━━━━━━━━━━━━━━━━\n\n';
         locations.forEach((loc, i) => {
             msg += `${i+1}. ${loc.name}\n📌 ${loc.address}\n🕐 ${loc.workTime}\n━━━━━━━━━━━━━━━━━━\n`;
         });
         await bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
-    }
-    else if (data === 'security_allowed_admins') {
-        let msg = '👥 *RUXSAT BERILGAN ADMINLAR*\n━━━━━━━━━━━━━━━━━━\n\n';
-        if (adminSettings.allowedEditors.length === 0) {
-            msg += 'Hech qanday admin ruxsatga ega emas.';
-        } else {
-            adminSettings.allowedEditors.forEach((id, i) => {
-                msg += `${i+1}. ID: ${id}\n━━━━━━━━━━━━━━━━━━\n`;
-            });
-        }
-        await bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
-    }
-    else if (data === 'security_add_admin') {
-        await bot.sendMessage(chatId, '➕ *Admin qo\'shish*\n\nAdmin ID sini yuboring:\n/approve_admin [ID]', { parse_mode: 'Markdown' });
-    }
-    else if (data === 'security_remove_admin') {
-        await bot.sendMessage(chatId, '➖ *Admin o\'chirish*\n\nAdmin ID sini yuboring:\n/remove_admin [ID]', { parse_mode: 'Markdown' });
-    }
-    else if (data === 'security_log') {
-        let msg = '📜 *XAVFSIZLIK JURNALI*\n━━━━━━━━━━━━━━━━━━\n\n';
-        if (adminSettings.securityLog.length === 0) {
-            msg += 'Hech qanday hodisa qayd etilmagan.';
-        } else {
-            adminSettings.securityLog.slice(0, 10).forEach(log => {
-                msg += `📅 ${new Date(log.date).toLocaleString()}\n🔹 ${log.action}\n👤 ${log.userId}\n━━━━━━━━━━━━━━━━━━\n`;
-            });
-        }
-        await bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
-    }
-    else if (data === 'security_back') {
-        await bot.deleteMessage(chatId, messageId);
-        await sendMainMenu(chatId, true);
-    }
-});
-
-// ======================== ADMIN BUYRUQLARI ========================
-bot.onText(/\/approve_admin (.+)/, async (msg, match) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    if (!isSuperAdmin(userId)) {
-        await bot.sendMessage(chatId, '❌ Faqat Super Admin!', { parse_mode: 'Markdown' });
-        return;
-    }
-    const targetId = parseInt(match[1]);
-    if (!adminSettings.allowedEditors.includes(targetId)) {
-        adminSettings.allowedEditors.push(targetId);
-        saveAdminSettings();
-        await bot.sendMessage(chatId, `✅ Admin ${targetId} ruxsat berildi!`, { parse_mode: 'Markdown' });
-    } else {
-        await bot.sendMessage(chatId, `❌ Admin allaqachon ruxsatga ega!`, { parse_mode: 'Markdown' });
-    }
-});
-
-bot.onText(/\/remove_admin (.+)/, async (msg, match) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    if (!isSuperAdmin(userId)) {
-        await bot.sendMessage(chatId, '❌ Faqat Super Admin!', { parse_mode: 'Markdown' });
-        return;
-    }
-    const targetId = parseInt(match[1]);
-    const index = adminSettings.allowedEditors.indexOf(targetId);
-    if (index !== -1) {
-        adminSettings.allowedEditors.splice(index, 1);
-        saveAdminSettings();
-        await bot.sendMessage(chatId, `✅ Admin ${targetId} ruxsat olib qo'yildi!`, { parse_mode: 'Markdown' });
-    } else {
-        await bot.sendMessage(chatId, `❌ Admin topilmadi!`, { parse_mode: 'Markdown' });
     }
 });
 
