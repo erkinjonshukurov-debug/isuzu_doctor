@@ -672,7 +672,7 @@ function getAllUsersWithDetails() {
     }));
 }
 
-// ======================== KEYBOARDS - QURILMA TURIGA QARAB ========================
+// ======================== KEYBOARDS ========================
 
 // ANDROID UCHUN INLINE KEYBOARD
 function getUserInlineKeyboard() {
@@ -761,7 +761,6 @@ function getAdminReplyKeyboard() {
     };
 }
 
-// Telefon raqamini so'rash uchun keyboard
 function getPhoneKeyboard() {
     return {
         reply_markup: {
@@ -782,7 +781,7 @@ function removeKeyboard() {
     };
 }
 
-// Asosiy menyuni yuborish (qurilma turiga qarab)
+// Asosiy menyuni yuborish
 async function sendMainMenu(chatId, isAdminUser = false, deviceType = 'web') {
     try {
         await sendReminder(chatId);
@@ -814,12 +813,6 @@ async function sendMainMenu(chatId, isAdminUser = false, deviceType = 'web') {
         }
     } catch (error) {
         console.error('Menu yuborishda xatolik:', error);
-        // Xatolik bo'lsa matnli menyu
-        if (isAdminUser) {
-            await bot.sendMessage(chatId, '👑 Admin paneli\n\n/statistika - Statistika\n/users - Foydalanuvchilar\n/add_diagnostic - Diagnostika qoshish\n/close - Asosiy menyu');
-        } else {
-            await bot.sendMessage(chatId, '🏠 Asosiy menyu\n\n/profile - Mening sahifam\n/my_cars - Mening avtomobillarim\n/my_bonus - Mening bonuslarim\n/add_car - Yangi avtomobil\n/history - Diagnostika tarixi\n/info - Malumot\n/close - Asosiy menyu');
-        }
     }
 }
 
@@ -845,7 +838,6 @@ bot.onText(/\/start/, async (msg) => {
     const lastName = msg.from.last_name || '';
     const username = msg.from.username || '';
     
-    // Qurilma turini aniqlash
     const userAgent = msg.from?.userAgent || '';
     const deviceType = getDeviceType(userAgent);
     setUserDevice(userId, deviceType);
@@ -1502,7 +1494,7 @@ bot.on('message', async (msg) => {
     }
 });
 
-// -------------------- CALLBACK QUERY HANDLER (ANDROID INLINE KEYBOARD UCHUN) --------------------
+// -------------------- CALLBACK QUERY HANDLER --------------------
 bot.on('callback_query', async (query) => {
     const chatId = query.message.chat.id;
     const data = query.data;
@@ -1516,7 +1508,7 @@ bot.on('callback_query', async (query) => {
         return;
     }
     
-    // Foydalanuvchi callback'lari
+    // FOYDALANUVCHI CALLBACK'LARI
     if (data === 'user_profile') {
         const carsList = user.cars.map(c => `🚗 ${c.carNumber} (${c.totalDiagnostics} ta diagnostika)`).join('\n');
         await sendReminder(chatId);
@@ -1642,7 +1634,7 @@ bot.on('callback_query', async (query) => {
         await bot.sendMessage(chatId, `ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 Bitta telefon bilan ${MAX_CARS_PER_USER} tagacha avtomobil\n📞 Aloqa: ${ADMIN_PHONE}\n📌 Bot versiyasi: ${BOT_VERSION}\n🔗 Bot linki: ${NEW_BOT_LINK}\n📸 Instagram: ${INSTAGRAM_LINK}\n👥 Telegram guruhimiz: ${TELEGRAM_GROUP_LINK}`, { parse_mode: 'Markdown' });
     }
     
-    // Admin callback'lari (qisqacha)
+    // ADMIN CALLBACK'LARI
     else if (data === 'admin_statistics') {
         if (!isAdmin(userId)) return;
         const stats = getStatistics();
@@ -1812,7 +1804,7 @@ bot.on('callback_query', async (query) => {
         await sendMainMenu(chatId, true, getUserDevice(userId));
     }
     
-    // Security callback'lari
+    // SECURITY CALLBACK'LARI
     else if (data === 'security_allowed_admins') {
         let msg = '👥 *RUXSAT BERILGAN ADMINLAR*\n━━━━━━━━━━━━━━━━━━\n\n';
         if (adminSettings.allowedEditors.length === 0) {
