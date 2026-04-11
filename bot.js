@@ -22,16 +22,13 @@ Agar avtomobilingiz doimo soz, ishonchli va yo‘llarda sizni yarim yo‘lda qol
 `;
 
 // -------------------- RAILWAY VOLUME YO'LLARI --------------------
-// Railway Volume mount path
 const VOLUME_PATH = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, 'data');
 const BACKUP_DIR = path.join(VOLUME_PATH, 'backups');
 
-// Ma'lumotlar fayllari volume ichida saqlanadi
 const USERS_FILE = path.join(VOLUME_PATH, 'users.json');
 const DIAGNOSTICS_FILE = path.join(VOLUME_PATH, 'diagnostics.json');
 const ERRORS_FILE = path.join(VOLUME_PATH, 'errors.json');
 
-// Volume papkasini yaratish
 function ensureVolumeDir() {
     if (!fs.existsSync(VOLUME_PATH)) {
         fs.mkdirSync(VOLUME_PATH, { recursive: true });
@@ -43,10 +40,8 @@ function ensureVolumeDir() {
     }
 }
 
-// Volume ni tekshirish
 ensureVolumeDir();
 
-// -------------------- BOT SOZLAMALARI --------------------
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 bot.deleteWebHook().catch(e => console.log('Webhook xatolik:', e.message));
 
@@ -180,6 +175,59 @@ function isAdmin(userId) {
     return user ? user.isAdmin === true : false;
 }
 
+// Foydalanuvchini bloklash
+function blockUser(userId) {
+    const user = getUserByUserId(userId);
+    if (!user) return { success: false, message: 'Foydalanuvchi topilmadi' };
+    if (user.isAdmin) return { success: false, message: 'Adminni bloklab bo\'lmaydi!' };
+    
+    user.isBlocked = true;
+    saveUsers();
+    return { success: true, message: `Foydalanuvchi bloklandi: ${user.fullName || user.phone}` };
+}
+
+// Foydalanuvchi blokini ochish
+function unblockUser(userId) {
+    const user = getUserByUserId(userId);
+    if (!user) return { success: false, message: 'Foydalanuvchi topilmadi' };
+    
+    user.isBlocked = false;
+    saveUsers();
+    return { success: true, message: `Foydalanuvchi blokdan ochildi: ${user.fullName || user.phone}` };
+}
+
+// Foydalanuvchini butunlay o'chirish
+function deleteUser(userId) {
+    const userIndex = users.findIndex(u => u.userId === userId);
+    if (userIndex === -1) return { success: false, message: 'Foydalanuvchi topilmadi' };
+    
+    const user = users[userIndex];
+    if (user.isAdmin) return { success: false, message: 'Adminni o\'chirib bo\'lmaydi!' };
+    
+    const userDiagnostics = diagnostics.filter(d => d.userId === userId);
+    diagnostics = diagnostics.filter(d => d.userId !== userId);
+    saveDiagnostics();
+    
+    users.splice(userIndex, 1);
+    saveUsers();
+    
+    return { 
+        success: true, 
+        message: `Foydalanuvchi o'chirildi: ${user.fullName || user.phone}`,
+        deletedDiagnostics: userDiagnostics.length
+    };
+}
+
+// Bloklangan foydalanuvchilarni olish
+function getBlockedUsers() {
+    return users.filter(u => !u.isAdmin && u.isBlocked === true);
+}
+
+// Bloklanmagan foydalanuvchilarni olish
+function getActiveUsers() {
+    return users.filter(u => !u.isAdmin && u.isBlocked !== true);
+}
+
 function addNewUser(userId, phoneNumber, carNumber, firstName, lastName, username) {
     const newUser = {
         userId: userId,
@@ -190,6 +238,7 @@ function addNewUser(userId, phoneNumber, carNumber, firstName, lastName, usernam
         fullName: `${firstName || ''} ${lastName || ''}`.trim(),
         isAdmin: false,
         isActive: true,
+        isBlocked: false,
         registeredDate: new Date().toISOString(),
         cars: [{
             carId: Date.now(),
@@ -342,8 +391,11 @@ function getAllDiagnostics(limit = 50) {
 
 function getStatistics() {
     const regularUsers = users.filter(u => !u.isAdmin);
+    const blockedUsers = users.filter(u => !u.isAdmin && u.isBlocked === true);
+    const activeUsers = regularUsers.filter(u => u.isBlocked !== true);
+    
     let totalCars = 0;
-    for (const user of regularUsers) {
+    for (const user of activeUsers) {
         totalCars += user.cars.length;
     }
     
@@ -351,7 +403,8 @@ function getStatistics() {
     const totalIncome = paidDiagnostics.reduce((sum, d) => sum + d.price, 0);
     
     return {
-        totalUsers: regularUsers.length,
+        totalUsers: activeUsers.length,
+        blockedUsers: blockedUsers.length,
         totalCars: totalCars,
         totalDiagnostics: diagnostics.length,
         paidDiagnostics: paidDiagnostics.length,
@@ -375,7 +428,8 @@ function getAllUsersWithDetails() {
         phone: u.phone,
         cars: u.cars,
         totalDiagnostics: u.totalDiagnosticsAll || 0,
-        registeredDate: u.registeredDate
+        registeredDate: u.registeredDate,
+        isBlocked: u.isBlocked || false
     }));
 }
 
@@ -388,7 +442,8 @@ function getAdminKeyboard() {
                 ['🔧 Diagnostika qo\'shish', '🎁 Bonusga yaqinlar'],
                 ['⚠️ Xatoliklar', '📋 Diagnostikalar tarixi'],
                 ['📅 Bugungi diagnostikalar', '💾 Backup yaratish'],
-                ['🔄 Database tiklash', '❌ Asosiy menyu']
+                ['🔄 Database tiklash', '🚫 Foydalanuvchini boshqarish'],
+                ['❌ Asosiy menyu']
             ],
             resize_keyboard: true,
             one_time_keyboard: false,
@@ -430,6 +485,53 @@ function getPhoneKeyboard() {
 function getBackupListKeyboard(backups) {
     const keyboard = backups.slice(0, 10).map(b => [{ text: `📁 ${b.name} (${b.date.toLocaleDateString()})`, callback_data: `restore_${b.name}` }]);
     keyboard.push([{ text: '❌ Bekor qilish', callback_data: 'restore_cancel' }]);
+    return { reply_markup: { inline_keyboard: keyboard } };
+}
+
+function getUserManagementKeyboard(users, page = 0) {
+    const itemsPerPage = 5;
+    const start = page * itemsPerPage;
+    const end = start + itemsPerPage;
+    const pageUsers = users.slice(start, end);
+    
+    const keyboard = [];
+    
+    pageUsers.forEach(user => {
+        const status = user.isBlocked ? '🔴 Bloklangan' : '🟢 Faol';
+        keyboard.push([{
+            text: `${user.fullName || 'Ismsiz'} - ${user.phone} (${status})`,
+            callback_data: `manage_user_${user.userId}`
+        }]);
+    });
+    
+    const navButtons = [];
+    if (page > 0) {
+        navButtons.push({ text: '◀️ Oldingi', callback_data: `user_page_${page - 1}` });
+    }
+    if (end < users.length) {
+        navButtons.push({ text: 'Keyingi ▶️', callback_data: `user_page_${page + 1}` });
+    }
+    if (navButtons.length > 0) {
+        keyboard.push(navButtons);
+    }
+    
+    keyboard.push([{ text: '❌ Bekor qilish', callback_data: 'user_manage_cancel' }]);
+    
+    return { reply_markup: { inline_keyboard: keyboard } };
+}
+
+function getUserActionKeyboard(userId, isBlocked) {
+    const keyboard = [];
+    
+    if (isBlocked) {
+        keyboard.push([{ text: '✅ Blokdan ochish', callback_data: `unblock_user_${userId}` }]);
+    } else {
+        keyboard.push([{ text: '🚫 Bloklash', callback_data: `block_user_${userId}` }]);
+    }
+    
+    keyboard.push([{ text: '🗑️ O\'chirish', callback_data: `delete_user_${userId}` }]);
+    keyboard.push([{ text: '🔙 Orqaga', callback_data: 'back_to_user_list' }]);
+    
     return { reply_markup: { inline_keyboard: keyboard } };
 }
 
@@ -492,6 +594,14 @@ bot.onText(/\/start/, async (msg) => {
     
     clearUserSession(userId);
     const existingUser = getUserByUserId(userId);
+    
+    if (existingUser && existingUser.isBlocked) {
+        await bot.sendMessage(chatId, '🚫 *Siz botdan bloklangansiz!*\n\nIltimos, administrator bilan bog\'laning.\n📞 Aloqa: ' + ADMIN_PHONE, { 
+            parse_mode: 'Markdown',
+            reply_markup: { remove_keyboard: true }
+        });
+        return;
+    }
     
     try {
         await sendReminder(chatId);
@@ -560,6 +670,7 @@ bot.on('contact', async (msg) => {
             fullName: `${firstName} ${lastName}`.trim(),
             isAdmin: true,
             isActive: true,
+            isBlocked: false,
             registeredDate: new Date().toISOString(),
             cars: [{
                 carId: Date.now(),
@@ -758,7 +869,7 @@ bot.onText(/\/statistika/, async (msg) => {
     if (!isAdmin(userId)) return;
     
     const stats = getStatistics();
-    await bot.sendMessage(chatId, `📊 *STATISTIKA*\n\n👥 Foydalanuvchilar: ${stats.totalUsers}\n🚗 Avtomobillar: ${stats.totalCars}\n🔧 Jami: ${stats.totalDiagnostics}\n💰 To'lovli: ${stats.paidDiagnostics}\n🎉 Bepul: ${stats.freeDiagnostics}\n💵 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n⚠️ Xatoliklar: ${stats.totalErrors}`, { parse_mode: 'Markdown' });
+    await bot.sendMessage(chatId, `📊 *STATISTIKA*\n\n👥 Faol foydalanuvchilar: ${stats.totalUsers}\n🚫 Bloklanganlar: ${stats.blockedUsers}\n🚗 Avtomobillar: ${stats.totalCars}\n🔧 Jami: ${stats.totalDiagnostics}\n💰 To'lovli: ${stats.paidDiagnostics}\n🎉 Bepul: ${stats.freeDiagnostics}\n💵 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n⚠️ Xatoliklar: ${stats.totalErrors}`, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/users/, async (msg) => {
@@ -774,7 +885,8 @@ bot.onText(/\/users/, async (msg) => {
     
     let msgText = '👥 *FOYDALANUVCHILAR*\n━━━━━━━━━━━━━━━━━━\n\n';
     usersList.slice(0, 15).forEach((u, index) => { 
-        msgText += `*${index + 1}. ${u.fullName || 'Ism kiritilmagan'}*\n`;
+        const status = u.isBlocked ? '🔴' : '🟢';
+        msgText += `${status} *${index + 1}. ${u.fullName || 'Ism kiritilmagan'}*\n`;
         msgText += `📞 ${u.phone}\n`;
         msgText += `🚗 ${u.cars.map(c => c.carNumber).join(', ')}\n`;
         msgText += `📊 ${u.totalDiagnostics} ta diagnostika\n`;
@@ -807,7 +919,6 @@ bot.on('message', async (msg) => {
     
     const session = getUserSession(userId);
     
-    // Birinchi avtomobil raqami
     if (session.step === 'first_car_number') {
         const carNumber = text.toUpperCase().trim();
         
@@ -842,7 +953,6 @@ bot.on('message', async (msg) => {
         return;
     }
     
-    // Yangi avtomobil qo'shish
     if (session.step === 'add_new_car') {
         const carNumber = text.toUpperCase().trim();
         
@@ -873,7 +983,6 @@ bot.on('message', async (msg) => {
         return;
     }
     
-    // Admin diagnostika qo'shish
     if (session.step === 'admin_add_diagnostic') {
         const carNumber = text.toUpperCase().trim();
         
@@ -982,11 +1091,18 @@ bot.on('message', async (msg) => {
         return;
     }
     
-    // FOYDALANUVCHI MENYUSI (tugmalar)
     const user = getUserByUserId(userId);
     
     if (!user && text !== '❌ Asosiy menyu') {
         await bot.sendMessage(chatId, '❌ Ro\'yxatdan o\'tmagan! /start bosing.');
+        return;
+    }
+    
+    if (user && user.isBlocked) {
+        await bot.sendMessage(chatId, '🚫 *Siz botdan bloklangansiz!*\n\nIltimos, administrator bilan bog\'laning.\n📞 Aloqa: ' + ADMIN_PHONE, { 
+            parse_mode: 'Markdown',
+            reply_markup: { remove_keyboard: true }
+        });
         return;
     }
     
@@ -1117,7 +1233,7 @@ bot.on('message', async (msg) => {
     
     if (text === '📊 Statistika') {
         const stats = getStatistics();
-        await bot.sendMessage(chatId, `📊 *STATISTIKA*\n\n👥 Foydalanuvchilar: ${stats.totalUsers}\n🚗 Avtomobillar: ${stats.totalCars}\n🔧 Jami: ${stats.totalDiagnostics}\n💰 To'lovli: ${stats.paidDiagnostics}\n🎉 Bepul: ${stats.freeDiagnostics}\n💵 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n⚠️ Xatoliklar: ${stats.totalErrors}`, { parse_mode: 'Markdown' });
+        await bot.sendMessage(chatId, `📊 *STATISTIKA*\n\n👥 Faol foydalanuvchilar: ${stats.totalUsers}\n🚫 Bloklanganlar: ${stats.blockedUsers}\n🚗 Avtomobillar: ${stats.totalCars}\n🔧 Jami: ${stats.totalDiagnostics}\n💰 To'lovli: ${stats.paidDiagnostics}\n🎉 Bepul: ${stats.freeDiagnostics}\n💵 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n⚠️ Xatoliklar: ${stats.totalErrors}`, { parse_mode: 'Markdown' });
     }
     else if (text === '👥 Foydalanuvchilar') {
         const usersList = getAllUsersWithDetails();
@@ -1128,7 +1244,8 @@ bot.on('message', async (msg) => {
         
         let msg = '👥 *FOYDALANUVCHILAR RO\'YXATI*\n━━━━━━━━━━━━━━━━━━\n\n';
         usersList.slice(0, 20).forEach((u, index) => { 
-            msg += `*${index + 1}. ${u.fullName || 'Ism kiritilmagan'}*\n`;
+            const status = u.isBlocked ? '🔴' : '🟢';
+            msg += `${status} *${index + 1}. ${u.fullName || 'Ism kiritilmagan'}*\n`;
             msg += `📞 ${u.phone}\n`;
             msg += `🚗 Avtomobillar:\n`;
             u.cars.forEach(car => {
@@ -1208,12 +1325,34 @@ bot.on('message', async (msg) => {
             await bot.sendMessage(chatId, '🔄 *Database tiklash*\n\nQuyidagi backup\'lardan birini tanlang:', { parse_mode: 'Markdown', ...getBackupListKeyboard(backups) });
         }
     }
+    else if (text === '🚫 Foydalanuvchini boshqarish') {
+        const activeUsers = getActiveUsers();
+        const blockedUsers = getBlockedUsers();
+        const allUsers = [...activeUsers, ...blockedUsers];
+        
+        if (allUsers.length === 0) {
+            await bot.sendMessage(chatId, '📭 Hech qanday foydalanuvchi yo\'q', { parse_mode: 'Markdown' });
+            return;
+        }
+        
+        await bot.sendMessage(chatId, 
+            `👥 *FOYDALANUVCHILARNI BOSHQARISH*\n\n` +
+            `🟢 Faol foydalanuvchilar: ${activeUsers.length}\n` +
+            `🔴 Bloklangan foydalanuvchilar: ${blockedUsers.length}\n\n` +
+            `📌 Quyidagi ro'yxatdan foydalanuvchini tanlang:`,
+            { 
+                parse_mode: 'Markdown',
+                ...getUserManagementKeyboard(allUsers)
+            }
+        );
+    }
 });
 
 // -------------------- CALLBACK QUERY --------------------
 bot.on('callback_query', async (query) => {
     const chatId = query.message.chat.id;
     const data = query.data;
+    const messageId = query.message.message_id;
     
     if (data.startsWith('restore_')) {
         const backupName = data.replace('restore_', '');
@@ -1226,10 +1365,191 @@ bot.on('callback_query', async (query) => {
         } else {
             await bot.sendMessage(chatId, '❌ *Database tiklashda xatolik!*\n\nBackup fayli buzilgan bo\'lishi mumkin.', { parse_mode: 'Markdown' });
         }
-    } else if (data === 'restore_cancel') {
+    } 
+    else if (data === 'restore_cancel') {
         await bot.answerCallbackQuery(query.id);
         await bot.sendMessage(chatId, '❌ *Database tiklash bekor qilindi.*', { parse_mode: 'Markdown' });
         await sendMainMenu(chatId, true);
+    }
+    else if (data === 'user_manage_cancel') {
+        await bot.answerCallbackQuery(query.id);
+        await bot.deleteMessage(chatId, messageId);
+        await sendMainMenu(chatId, true);
+    }
+    else if (data === 'back_to_user_list') {
+        await bot.answerCallbackQuery(query.id);
+        const activeUsers = getActiveUsers();
+        const blockedUsers = getBlockedUsers();
+        const allUsers = [...activeUsers, ...blockedUsers];
+        
+        await bot.editMessageText(
+            `👥 *FOYDALANUVCHILARNI BOSHQARISH*\n\n` +
+            `🟢 Faol foydalanuvchilar: ${activeUsers.length}\n` +
+            `🔴 Bloklangan foydalanuvchilar: ${blockedUsers.length}\n\n` +
+            `📌 Quyidagi ro'yxatdan foydalanuvchini tanlang:`,
+            {
+                chat_id: chatId,
+                message_id: messageId,
+                parse_mode: 'Markdown',
+                ...getUserManagementKeyboard(allUsers)
+            }
+        );
+    }
+    else if (data.startsWith('user_page_')) {
+        const page = parseInt(data.split('_')[2]);
+        const activeUsers = getActiveUsers();
+        const blockedUsers = getBlockedUsers();
+        const allUsers = [...activeUsers, ...blockedUsers];
+        
+        await bot.answerCallbackQuery(query.id);
+        await bot.editMessageReplyMarkup(
+            getUserManagementKeyboard(allUsers, page).reply_markup,
+            { chat_id: chatId, message_id: messageId }
+        );
+    }
+    else if (data.startsWith('manage_user_')) {
+        const userId = parseInt(data.split('_')[2]);
+        const user = getUserByUserId(userId);
+        
+        if (!user) {
+            await bot.answerCallbackQuery(query.id, { text: 'Foydalanuvchi topilmadi!', show_alert: true });
+            return;
+        }
+        
+        await bot.answerCallbackQuery(query.id);
+        
+        const userInfo = 
+            `👤 *${user.fullName || 'Ismsiz foydalanuvchi'}*\n\n` +
+            `📞 Telefon: ${user.phone}\n` +
+            `🚗 Avtomobillar: ${user.cars.length} ta\n` +
+            `📊 Diagnostika: ${user.totalDiagnosticsAll || 0} ta\n` +
+            `🎁 Bonus: ${user.totalBonusCount || 0}\n` +
+            `🎉 Bepul: ${user.totalFreeDiagnostics || 0}\n` +
+            `📅 Ro'yxatdan: ${new Date(user.registeredDate).toLocaleDateString()}\n` +
+            `🚦 Holat: ${user.isBlocked ? '🔴 BLOKLANGAN' : '🟢 FAOL'}\n\n` +
+            `📌 Quyidagi amallardan birini tanlang:`;
+        
+        await bot.editMessageText(
+            userInfo,
+            {
+                chat_id: chatId,
+                message_id: messageId,
+                parse_mode: 'Markdown',
+                ...getUserActionKeyboard(userId, user.isBlocked)
+            }
+        );
+    }
+    else if (data.startsWith('block_user_')) {
+        const userId = parseInt(data.split('_')[2]);
+        const result = blockUser(userId);
+        
+        await bot.answerCallbackQuery(query.id, { text: result.message, show_alert: true });
+        
+        if (result.success) {
+            const user = getUserByUserId(userId);
+            try {
+                await bot.sendMessage(userId, '🚫 *Siz botdan bloklandingiz!*\n\nIltimos, administrator bilan bog\'laning.\n📞 Aloqa: ' + ADMIN_PHONE, { parse_mode: 'Markdown' });
+            } catch(e) {}
+            
+            const activeUsers = getActiveUsers();
+            const blockedUsers = getBlockedUsers();
+            const allUsers = [...activeUsers, ...blockedUsers];
+            
+            await bot.editMessageText(
+                `👥 *FOYDALANUVCHILARNI BOSHQARISH*\n\n` +
+                `🟢 Faol foydalanuvchilar: ${activeUsers.length}\n` +
+                `🔴 Bloklangan foydalanuvchilar: ${blockedUsers.length}\n\n` +
+                `📌 Quyidagi ro'yxatdan foydalanuvchini tanlang:`,
+                {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    parse_mode: 'Markdown',
+                    ...getUserManagementKeyboard(allUsers)
+                }
+            );
+        }
+    }
+    else if (data.startsWith('unblock_user_')) {
+        const userId = parseInt(data.split('_')[2]);
+        const result = unblockUser(userId);
+        
+        await bot.answerCallbackQuery(query.id, { text: result.message, show_alert: true });
+        
+        if (result.success) {
+            const user = getUserByUserId(userId);
+            try {
+                await bot.sendMessage(userId, '✅ *Sizning blokingiz ochildi!*\n\nBotdan yana foydalanishingiz mumkin.\n/start - Bosh sahifa', { parse_mode: 'Markdown' });
+            } catch(e) {}
+            
+            const activeUsers = getActiveUsers();
+            const blockedUsers = getBlockedUsers();
+            const allUsers = [...activeUsers, ...blockedUsers];
+            
+            await bot.editMessageText(
+                `👥 *FOYDALANUVCHILARNI BOSHQARISH*\n\n` +
+                `🟢 Faol foydalanuvchilar: ${activeUsers.length}\n` +
+                `🔴 Bloklangan foydalanuvchilar: ${blockedUsers.length}\n\n` +
+                `📌 Quyidagi ro'yxatdan foydalanuvchini tanlang:`,
+                {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    parse_mode: 'Markdown',
+                    ...getUserManagementKeyboard(allUsers)
+                }
+            );
+        }
+    }
+    else if (data.startsWith('delete_user_')) {
+        const userId = parseInt(data.split('_')[2]);
+        
+        const confirmKeyboard = {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '✅ Ha, o\'chirish', callback_data: `confirm_delete_${userId}` }],
+                    [{ text: '❌ Yo\'q, bekor qilish', callback_data: `back_to_user_list` }]
+                ]
+            }
+        };
+        
+        await bot.answerCallbackQuery(query.id);
+        await bot.editMessageText(
+            `⚠️ *DIQQAT!*\n\nSiz foydalanuvchini butunlay o\'chirmoqchisiz!\n\n` +
+            `Bu amalni ortga qaytarib bo'lmaydi.\n` +
+            `Foydalanuvchining barcha ma'lumotlari va diagnostikalari o\'chiriladi.\n\n` +
+            `Haqiqatan ham o\'chirishni xohlaysizmi?`,
+            {
+                chat_id: chatId,
+                message_id: messageId,
+                parse_mode: 'Markdown',
+                ...confirmKeyboard
+            }
+        );
+    }
+    else if (data.startsWith('confirm_delete_')) {
+        const userId = parseInt(data.split('_')[2]);
+        const result = deleteUser(userId);
+        
+        await bot.answerCallbackQuery(query.id, { text: result.message, show_alert: true });
+        
+        if (result.success) {
+            const activeUsers = getActiveUsers();
+            const blockedUsers = getBlockedUsers();
+            const allUsers = [...activeUsers, ...blockedUsers];
+            
+            await bot.editMessageText(
+                `👥 *FOYDALANUVCHILARNI BOSHQARISH*\n\n` +
+                `🟢 Faol foydalanuvchilar: ${activeUsers.length}\n` +
+                `🔴 Bloklangan foydalanuvchilar: ${blockedUsers.length}\n\n` +
+                `📌 Quyidagi ro'yxatdan foydalanuvchini tanlang:\n\n` +
+                `✅ ${result.message} (${result.deletedDiagnostics} ta diagnostika o\'chirildi)`,
+                {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    parse_mode: 'Markdown',
+                    ...getUserManagementKeyboard(allUsers)
+                }
+            );
+        }
     }
 });
 
@@ -1249,7 +1569,8 @@ console.log('🚗 ISUZU DOCTOR BOT ISHGA TUSHDI');
 console.log('='.repeat(60));
 console.log(`👑 Admin telefon: ${ADMIN_PHONE}`);
 console.log(`💰 Diagnostika narxi: ${DIAGNOSTIC_PRICE.toLocaleString()} so'm`);
-console.log(`👥 Foydalanuvchilar: ${users.filter(u => !u.isAdmin).length}`);
+console.log(`👥 Faol foydalanuvchilar: ${users.filter(u => !u.isAdmin && !u.isBlocked).length}`);
+console.log(`🚫 Bloklanganlar: ${users.filter(u => !u.isAdmin && u.isBlocked).length}`);
 console.log(`🚗 Avtomobillar: ${users.reduce((sum, u) => sum + (u.cars ? u.cars.length : 0), 0)}`);
 console.log(`🔧 Diagnostikalar: ${diagnostics.length}`);
 console.log(`💾 Volume manzili: ${VOLUME_PATH}`);
