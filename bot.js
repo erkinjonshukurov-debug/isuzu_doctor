@@ -1,7 +1,6 @@
 const TelegramBot = require('node-telegram-bot-api');
 const path = require('path');
 const fs = require('fs');
-const axios = require('axios');
 
 // -------------------- VERSIYA MA'LUMOTLARI --------------------
 const BOT_VERSION = "1.0.0";
@@ -67,6 +66,7 @@ function addVideo(videoFileId, title, description, duration, thumbnail, adminId)
         thumbnail: thumbnail || null,
         views: 0,
         likes: 0,
+        likedBy: [],
         uploadedBy: adminId,
         uploadDate: new Date().toISOString(),
         isActive: true
