@@ -9,7 +9,14 @@ const INSTAGRAM_LINK = "https://www.instagram.com/isuzu.samarkand";
 const TELEGRAM_GROUP_LINK = "https://t.me/+piY0W4XrGqFkN2Iy";
 
 // -------------------- XAVFSIZLIK VA ADMIN --------------------
-const BOT_TOKEN = process.env.BOT_TOKEN || '8779251766:AAH12INusgBCawsk5awqIjcyHnNLiq5A33A';
+// MUHIM: Tokenni environment variable orqali yuboring!
+// Railway'da: BOT_TOKEN=8779251766:AAH12INusgBCawsk5awqIjcyHnNLiq5A33A
+const BOT_TOKEN = process.env.BOT_TOKEN;
+if (!BOT_TOKEN) {
+    console.error("❌ XATOLIK: BOT_TOKEN environment variable topilmadi!");
+    console.log("Iltimos, Railway'da BOT_TOKEN ni sozlang yoki to'g'ridan-to'g'ri kodga yozing (xavfli!)");
+    process.exit(1);
+}
 
 const ADMIN_PHONE = "+998979247888";
 const ADMIN_IDS = [1437230485];
@@ -133,7 +140,7 @@ function getActiveVideos() {
 const REMINDER_MESSAGE = `
 🚗 **Hurmatli mijoz!**
 
-Agar avtomobilingiz doimo soz, ishonchli va yo‘llarda sizni yarim yo‘lda qoldirmasligini istasangiz — unda unga faqat professional va malakali mutaxassislar xizmat ko‘rsatishi muhim.
+Agar avtomobilingiz doimo soz, ishonchli va yo'llarda sizni yarim yo'lda qoldirmasligini istasangiz — unda unga faqat professional va malakali mutaxassislar xizmat ko'rsatishi muhim.
 
 🛠️ **Sifatli xizmat** — bu nafaqat qulaylik, balki sizning xavfsizligingiz kafolatidir.
 
@@ -445,6 +452,10 @@ function loadData() {
             users = JSON.parse(fs.readFileSync(USERS_FILE, "utf8"));
             users.forEach(u => {
                 if (u.isBlocked === undefined) u.isBlocked = false;
+                if (!u.cars) u.cars = [];
+                if (u.totalDiagnosticsAll === undefined) u.totalDiagnosticsAll = 0;
+                if (u.totalBonusCount === undefined) u.totalBonusCount = 0;
+                if (u.totalFreeDiagnostics === undefined) u.totalFreeDiagnostics = 0;
             });
             saveUsers();
         } else {
@@ -1561,8 +1572,22 @@ bot.on("message", async (msg) => {
         }
     }
     
-    // AGAR SESSION YO'Q BO'LSA - REPLY KEYBOARD TUGMALARINI TEKSHIRISH
-    // Foydalanuvchi reply keyboard tugmalari
+    // AGAR SESSION YO'Q BO'LSA - Foydalanuvchi ro'yxatdan o'tmagan bo'lishi mumkin
+    if (!user) {
+        await bot.sendMessage(chatId, "❌ Ro'yxatdan o'tmagansiz! Iltimos, /start bosing.", { parse_mode: "Markdown" });
+        return;
+    }
+    
+    // Foydalanuvchi bloklangan bo'lsa
+    if (user.isBlocked) {
+        await bot.sendMessage(chatId, "🚫 *Siz botdan bloklangansiz!*\n\nIltimos, administrator bilan bog'laning.\n📞 Aloqa: " + ADMIN_PHONE, { 
+            parse_mode: "Markdown",
+            ...removeKeyboard()
+        });
+        return;
+    }
+    
+    // ADMIN MATNLI BUYRUQLARNI TEKSHIRISH
     const adminTextCommands = [
         "📊 Statistika", "👥 Foydalanuvchilar", "🔧 Diagnostika qo'shish", "🎁 Bonusga yaqinlar",
         "⚠️ Xatoliklar", "📋 Diagnostikalar tarixi", "📅 Bugungi diagnostikalar", "📄 Hisobot olish",
@@ -1576,7 +1601,7 @@ bot.on("message", async (msg) => {
         "📸 Bizning Instagram", "👥 Telegram guruhimiz", "ℹ️ Ma'lumot", "❌ Asosiy menyu"
     ];
     
-    // ADMIN MATNLI BUYRUQLARNI TEKSHIRISH
+    // ADMIN MATNLI BUYRUQLAR
     if (isAdmin(userId) && adminTextCommands.includes(text)) {
         if (text === "📊 Statistika") {
             const stats = getStatistics();
@@ -1759,8 +1784,8 @@ bot.on("message", async (msg) => {
         return;
     }
     
-    // FOYDALANUVCHI MATNLI BUYRUQLARNI TEKSHIRISH
-    if (user && !user.isAdmin && userTextCommands.includes(text)) {
+    // FOYDALANUVCHI MATNLI BUYRUQLAR
+    if (!isAdmin(userId) && userTextCommands.includes(text)) {
         if (text === "📊 Mening sahifam") {
             const carsList = user.cars.map(c => "🚗 " + c.carNumber + " (" + c.totalDiagnostics + " ta diagnostika)").join("\n");
             await bot.sendMessage(chatId, "📊 *MENGING SAHIFAM*\n\n👤 *Ism:* " + (user.fullName || "Kiritilmagan") + "\n📞 *Telefon:* " + user.phone + "\n🚗 *Avtomobillar:* " + user.cars.length + "/" + MAX_CARS_PER_USER + "\n\n" + carsList + "\n\n🎁 *Umumiy bonuslar:* " + (user.totalBonusCount || 0) + "\n🎉 *Bepul diagnostika:* " + (user.totalFreeDiagnostics || 0) + " ta\n📊 *Jami diagnostika:* " + (user.totalDiagnosticsAll || 0) + " ta\n📌 *Versiya:* " + BOT_VERSION, { parse_mode: "Markdown" });
@@ -1891,9 +1916,7 @@ bot.on("message", async (msg) => {
     }
     
     // AGAR HECH QANDAY TUGMA YOKI SESSION YO'Q BO'LSA
-    if (!session.step) {
-        await bot.sendMessage(chatId, "❌ *Tushunarsiz buyruq!* Menyudan foydalaning.\n\n/start - Bosh sahifa\n/profile - Mening sahifam\n/my_cars - Mening avtomobillarim\n/my_bonus - Mening bonuslarim\n/history - Diagnostika tarixi\n/info - Ma'lumot", { parse_mode: "Markdown" });
-    }
+    await bot.sendMessage(chatId, "❌ *Tushunarsiz buyruq!* Menyudan foydalaning.\n\n/start - Bosh sahifa\n/profile - Mening sahifam\n/my_cars - Mening avtomobillarim\n/my_bonus - Mening bonuslarim\n/history - Diagnostika tarixi\n/info - Ma'lumot", { parse_mode: "Markdown" });
 });
 
 // -------------------- CALLBACK QUERY HANDLER --------------------
