@@ -24,19 +24,47 @@ let adminSettings = {
 const DIAGNOSTIC_PRICE = 250000;
 const MAX_CARS_PER_USER = 20;
 
-// -------------------- VIDEO GALEREYA SOZLAMALARI --------------------
+// -------------------- RAILWAY VOLUME YO'LLARI --------------------
+const VOLUME_PATH = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, 'data');
+const BACKUP_DIR = path.join(VOLUME_PATH, 'backups');
+const REPORTS_DIR = path.join(VOLUME_PATH, 'reports');
 const VIDEOS_DIR = path.join(VOLUME_PATH, 'videos');
+
+const USERS_FILE = path.join(VOLUME_PATH, 'users.json');
+const DIAGNOSTICS_FILE = path.join(VOLUME_PATH, 'diagnostics.json');
+const ERRORS_FILE = path.join(VOLUME_PATH, 'errors.json');
+const VERSION_FILE = path.join(VOLUME_PATH, 'version.json');
+const ADMIN_SETTINGS_FILE = path.join(VOLUME_PATH, 'admin_settings.json');
 const VIDEOS_FILE = path.join(VOLUME_PATH, 'videos.json');
 
+// -------------------- VIDEO GALEREYA --------------------
 let videoList = [];
 
-function ensureVideoDir() {
+function ensureVolumeDir() {
+    if (!fs.existsSync(VOLUME_PATH)) {
+        fs.mkdirSync(VOLUME_PATH, { recursive: true });
+        console.log(`✅ Volume yaratildi: ${VOLUME_PATH}`);
+    }
+    if (!fs.existsSync(BACKUP_DIR)) {
+        fs.mkdirSync(BACKUP_DIR, { recursive: true });
+        console.log(`✅ Backup papkasi yaratildi: ${BACKUP_DIR}`);
+    }
+    if (!fs.existsSync(REPORTS_DIR)) {
+        fs.mkdirSync(REPORTS_DIR, { recursive: true });
+        console.log(`✅ Hisobot papkasi yaratildi: ${REPORTS_DIR}`);
+    }
     if (!fs.existsSync(VIDEOS_DIR)) {
         fs.mkdirSync(VIDEOS_DIR, { recursive: true });
         console.log(`✅ Video papkasi yaratildi: ${VIDEOS_DIR}`);
     }
 }
 
+ensureVolumeDir();
+
+const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+bot.deleteWebHook().catch(e => console.log('Webhook xatolik:', e.message));
+
+// -------------------- VIDEO FUNKSIYALARI --------------------
 function loadVideos() {
     try {
         if (fs.existsSync(VIDEOS_FILE)) {
@@ -124,38 +152,6 @@ Agar avtomobilingiz doimo soz, ishonchli va yo‘llarda sizni yarim yo‘lda qol
 
 ✅ Shuning uchun avtomobilingizni haqiqiy professionallarga ishonib topshiring!
 `;
-
-// -------------------- RAILWAY VOLUME YO'LLARI --------------------
-const VOLUME_PATH = process.env.RAILWAY_VOLUME_MOUNT_PATH || path.join(__dirname, 'data');
-const BACKUP_DIR = path.join(VOLUME_PATH, 'backups');
-const REPORTS_DIR = path.join(VOLUME_PATH, 'reports');
-
-const USERS_FILE = path.join(VOLUME_PATH, 'users.json');
-const DIAGNOSTICS_FILE = path.join(VOLUME_PATH, 'diagnostics.json');
-const ERRORS_FILE = path.join(VOLUME_PATH, 'errors.json');
-const VERSION_FILE = path.join(VOLUME_PATH, 'version.json');
-const ADMIN_SETTINGS_FILE = path.join(VOLUME_PATH, 'admin_settings.json');
-
-function ensureVolumeDir() {
-    if (!fs.existsSync(VOLUME_PATH)) {
-        fs.mkdirSync(VOLUME_PATH, { recursive: true });
-        console.log(`✅ Volume yaratildi: ${VOLUME_PATH}`);
-    }
-    if (!fs.existsSync(BACKUP_DIR)) {
-        fs.mkdirSync(BACKUP_DIR, { recursive: true });
-        console.log(`✅ Backup papkasi yaratildi: ${BACKUP_DIR}`);
-    }
-    if (!fs.existsSync(REPORTS_DIR)) {
-        fs.mkdirSync(REPORTS_DIR, { recursive: true });
-        console.log(`✅ Hisobot papkasi yaratildi: ${REPORTS_DIR}`);
-    }
-}
-
-ensureVolumeDir();
-ensureVideoDir();
-
-const bot = new TelegramBot(BOT_TOKEN, { polling: true });
-bot.deleteWebHook().catch(e => console.log('Webhook xatolik:', e.message));
 
 // -------------------- QURILMA TURINI ANIQLASH --------------------
 let userDevices = new Map();
