@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 
 // -------------------- VERSIYA MA'LUMOTLARI --------------------
-const BOT_VERSION = "1.0.0";
+const BOT_VERSION = "2.0.0";
 const NEW_BOT_LINK = "https://t.me/Isuzu_doctor_bot";
 const INSTAGRAM_LINK = "https://www.instagram.com/isuzu.samarkand";
 const TELEGRAM_GROUP_LINK = "https://t.me/+piY0W4XrGqFkN2Iy";
@@ -813,7 +813,7 @@ async function showVideoGallery(chatId, page = 0) {
 
 // ======================== KEYBOARDS ========================
 
-// ANDROID UCHUN INLINE KEYBOARD
+// FOYDALANUVCHI UCHUN INLINE KEYBOARD (callback tugmalar)
 function getUserInlineKeyboard() {
     return {
         reply_markup: {
@@ -832,50 +832,7 @@ function getUserInlineKeyboard() {
     };
 }
 
-function getAdminInlineKeyboard() {
-    const keyboard = [
-        [{ text: "📊 Statistika", callback_data: "admin_statistics" }],
-        [{ text: "👥 Foydalanuvchilar", callback_data: "admin_users" }],
-        [{ text: "🔧 Diagnostika qo'shish", callback_data: "admin_add_diagnostic" }],
-        [{ text: "🎁 Bonusga yaqinlar", callback_data: "admin_near_bonus" }],
-        [{ text: "⚠️ Xatoliklar", callback_data: "admin_errors" }],
-        [{ text: "📋 Diagnostikalar tarixi", callback_data: "admin_diagnostics_history" }],
-        [{ text: "📅 Bugungi diagnostikalar", callback_data: "admin_today_diagnostics" }],
-        [{ text: "📄 Hisobot olish", callback_data: "admin_get_report" }],
-        [{ text: "📹 Video galereya", callback_data: "admin_video_gallery" }],
-        [{ text: "📤 Video yuklash", callback_data: "admin_upload_video" }],
-        [{ text: "💾 Backup yaratish", callback_data: "admin_create_backup" }],
-        [{ text: "🔄 Database tiklash", callback_data: "admin_restore_backup" }],
-        [{ text: "🚫 Foydalanuvchini boshqarish", callback_data: "admin_manage_users" }],
-        [{ text: "🔐 Xavfsizlik", callback_data: "admin_security" }]
-    ];
-    
-    if (!isUpdateMode) {
-        keyboard.push([{ text: "🚀 Yangi versiyaga o'tish", callback_data: "admin_update_mode" }]);
-    } else {
-        keyboard.push([{ text: "✅ Yangilanish rejimini o'chirish", callback_data: "admin_disable_update" }]);
-    }
-    
-    return { reply_markup: { inline_keyboard: keyboard } };
-}
-
-// IPHONE VA WEB UCHUN REPLY KEYBOARD
-function getUserReplyKeyboard() {
-    return {
-        reply_markup: {
-            keyboard: [
-                ["📊 Mening sahifam", "🚗 Mening avtomobillarim"],
-                ["🎁 Mening bonuslarim", "➕ Yangi avtomobil qo'shish"],
-                ["📋 Diagnostika tarixim", "📹 Video galereya"],
-                ["📸 Bizning Instagram", "👥 Telegram guruhimiz"],
-                ["ℹ️ Ma'lumot", "❌ Asosiy menyu"]
-            ],
-            resize_keyboard: true,
-            one_time_keyboard: false
-        }
-    };
-}
-
+// ADMIN UCHUN REPLY KEYBOARD (matnli tugmalar)
 function getAdminReplyKeyboard() {
     const keyboard = [
         ["📊 Statistika", "👥 Foydalanuvchilar"],
@@ -930,29 +887,17 @@ async function sendMainMenu(chatId, isAdminUser = false, deviceType = "web") {
         await sendReminder(chatId);
         
         if (isAdminUser) {
-            if (deviceType === "android") {
-                await bot.sendMessage(chatId, "👑 *Admin paneliga xush kelibsiz!*\n\nQuyidagi tugmalardan foydalaning:", {
-                    parse_mode: "Markdown",
-                    ...getAdminInlineKeyboard()
-                });
-            } else {
-                await bot.sendMessage(chatId, "👑 *Admin paneliga xush kelibsiz!*\n\nQuyidagi tugmalardan foydalaning:", {
-                    parse_mode: "Markdown",
-                    ...getAdminReplyKeyboard()
-                });
-            }
+            // Admin uchun REPLY KEYBOARD
+            await bot.sendMessage(chatId, "👑 *Admin paneliga xush kelibsiz!* (Versiya " + BOT_VERSION + ")\n\nQuyidagi tugmalardan foydalaning:", {
+                parse_mode: "Markdown",
+                ...getAdminReplyKeyboard()
+            });
         } else {
-            if (deviceType === "android") {
-                await bot.sendMessage(chatId, "🏠 *Asosiy menyu* (Versiya " + BOT_VERSION + ")\n\n🚗 ISUZU DOCTOR botiga xush kelibsiz!\n\nQuyidagi tugmalardan birini tanlang:", {
-                    parse_mode: "Markdown",
-                    ...getUserInlineKeyboard()
-                });
-            } else {
-                await bot.sendMessage(chatId, "🏠 *Asosiy menyu* (Versiya " + BOT_VERSION + ")\n\n🚗 ISUZU DOCTOR botiga xush kelibsiz!\n\nQuyidagi tugmalardan birini tanlang:", {
-                    parse_mode: "Markdown",
-                    ...getUserReplyKeyboard()
-                });
-            }
+            // Foydalanuvchi uchun INLINE KEYBOARD
+            await bot.sendMessage(chatId, "🏠 *Asosiy menyu* (Versiya " + BOT_VERSION + ")\n\n🚗 ISUZU DOCTOR botiga xush kelibsiz!\n\nQuyidagi tugmalardan birini tanlang:", {
+                parse_mode: "Markdown",
+                ...getUserInlineKeyboard()
+            });
         }
     } catch (error) {
         console.error("Menu yuborishda xatolik:", error);
@@ -1118,7 +1063,7 @@ bot.on("contact", async (msg) => {
     }
 });
 
-// -------------------- MATNLI BUYRUQLAR --------------------
+// -------------------- MATNLI BUYRUQLAR (faqat adminlar uchun reply keyboard) --------------------
 bot.onText(/\/profile/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -1145,7 +1090,7 @@ bot.onText(/\/my_cars/, async (msg) => {
     }
     
     if (user.cars.length === 0) {
-        await bot.sendMessage(chatId, "📭 Sizda hali avtomobillar mavjud emas!\n\n➕ '➕ Yangi avtomobil qo'shish' tugmasini bosing.");
+        await bot.sendMessage(chatId, "📭 Sizda hali avtomobillar mavjud emas!\n\n➕ Yangi avtomobil qo'shish tugmasini bosing.");
         return;
     }
     
@@ -1257,7 +1202,7 @@ bot.onText(/\/close/, async (msg) => {
     await sendMainMenu(chatId, isAdmin(userId), getUserDevice(userId));
 });
 
-// -------------------- ADMIN MATNLI BUYRUQLAR --------------------
+// -------------------- ADMIN MATNLI BUYRUQLAR (REPLY KEYBOARD UCHUN) --------------------
 bot.onText(/\/statistika/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -1300,7 +1245,7 @@ bot.onText(/\/add_diagnostic/, async (msg) => {
     await bot.sendMessage(chatId, "🔧 *Diagnostika qo'shish*\n\n🚗 Avtomobil raqamini kiriting:", { parse_mode: "Markdown", ...removeKeyboard() });
 });
 
-// -------------------- XABARLARNI QAYTA ISHLASH (MUHIM QISM - VIDEO YUKLASH UCHUN) --------------------
+// -------------------- XABARLARNI QAYTA ISHLASH --------------------
 bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -1320,7 +1265,6 @@ bot.on("message", async (msg) => {
         }
         
         if (video) {
-            // Video fayl qabul qilindi
             session.data.videoFileId = video.file_id;
             session.step = "admin_waiting_video_title";
             await bot.sendMessage(chatId, "✅ *Video qabul qilindi!*\n\n📝 Endi video nomini kiriting:", { parse_mode: "Markdown" });
@@ -1368,7 +1312,7 @@ bot.on("message", async (msg) => {
         return;
     }
     
-    // Rasm yoki boshqa media - ignore qilish
+    // Rasm - ignore
     if (photo) return;
     
     // Video yuklash session bo'lmasa va text bo'lmasa - ignore
@@ -1594,18 +1538,12 @@ bot.on("message", async (msg) => {
         return;
     }
     
-    // ADMIN MATNLI BUYRUQLARNI TEKSHIRISH
+    // ADMIN MATNLI BUYRUQLARNI TEKSHIRISH (REPLY KEYBOARD UCHUN)
     const adminTextCommands = [
         "📊 Statistika", "👥 Foydalanuvchilar", "🔧 Diagnostika qo'shish", "🎁 Bonusga yaqinlar",
         "⚠️ Xatoliklar", "📋 Diagnostikalar tarixi", "📅 Bugungi diagnostikalar", "📄 Hisobot olish",
         "📹 Video galereya", "📤 Video yuklash", "💾 Backup yaratish", "🔄 Database tiklash",
         "🚫 Foydalanuvchini boshqarish", "🔐 Xavfsizlik", "🚀 Yangi versiyaga o'tish", "✅ Yangilanish rejimini o'chirish"
-    ];
-    
-    const userTextCommands = [
-        "📊 Mening sahifam", "🚗 Mening avtomobillarim", "🎁 Mening bonuslarim",
-        "➕ Yangi avtomobil qo'shish", "📋 Diagnostika tarixim", "📹 Video galereya",
-        "📸 Bizning Instagram", "👥 Telegram guruhimiz", "ℹ️ Ma'lumot", "❌ Asosiy menyu"
     ];
     
     // ADMIN MATNLI BUYRUQLAR
@@ -1791,142 +1729,15 @@ bot.on("message", async (msg) => {
         return;
     }
     
-    // FOYDALANUVCHI MATNLI BUYRUQLAR
-    if (!isAdmin(userId) && userTextCommands.includes(text)) {
-        if (text === "📊 Mening sahifam") {
-            const carsList = user.cars.map(c => "🚗 " + c.carNumber + " (" + c.totalDiagnostics + " ta diagnostika)").join("\n");
-            await bot.sendMessage(chatId, "📊 *MENGING SAHIFAM*\n\n👤 *Ism:* " + (user.fullName || "Kiritilmagan") + "\n📞 *Telefon:* " + user.phone + "\n🚗 *Avtomobillar:* " + user.cars.length + "/" + MAX_CARS_PER_USER + "\n\n" + carsList + "\n\n🎁 *Umumiy bonuslar:* " + (user.totalBonusCount || 0) + "\n🎉 *Bepul diagnostika:* " + (user.totalFreeDiagnostics || 0) + " ta\n📊 *Jami diagnostika:* " + (user.totalDiagnosticsAll || 0) + " ta\n📌 *Versiya:* " + BOT_VERSION, { parse_mode: "Markdown" });
-        }
-        else if (text === "🚗 Mening avtomobillarim") {
-            if (user.cars.length === 0) {
-                await bot.sendMessage(chatId, "📭 Sizda hali avtomobillar mavjud emas!\n\n➕ '➕ Yangi avtomobil qo'shish' tugmasini bosing.", { parse_mode: "Markdown" });
-                return;
-            }
-            
-            let carsText = "🚗 *MENGING AVTOMOBILLARIM*\n\n📌 *Bonus qoidasi:* 5 diagnostika = 1 BEPUL\n━━━━━━━━━━━━━━━━━━\n\n";
-            for (const car of user.cars) {
-                const nextFree = 5 - car.bonusCount;
-                carsText += "🚗 *" + car.carNumber + "*\n";
-                carsText += "🎁 Bonus: " + car.bonusCount + "/5\n";
-                carsText += "🎉 Bepul: " + car.freeDiagnostics + " ta\n";
-                carsText += "📊 Diagnostika: " + car.totalDiagnostics + " ta\n";
-                carsText += "📅 Qo'shilgan: " + new Date(car.addedDate).toLocaleDateString() + "\n";
-                
-                if (car.freeDiagnostics > 0) {
-                    carsText += "✅ *Bepul diagnostika mavjud!*\n";
-                } else if (nextFree > 0) {
-                    carsText += "📌 Keyingi BEPUL: " + nextFree + " ta diagnostikadan keyin\n";
-                }
-                
-                carsText += "━━━━━━━━━━━━━━━━━━\n";
-            }
-            await bot.sendMessage(chatId, carsText, { parse_mode: "Markdown" });
-        }
-        else if (text === "➕ Yangi avtomobil qo'shish") {
-            if (user.cars.length >= MAX_CARS_PER_USER) {
-                await bot.sendMessage(chatId, "❌ Siz maksimum " + MAX_CARS_PER_USER + " ta avtomobil qo'sha olasiz!", { parse_mode: "Markdown" });
-                return;
-            }
-            
-            const newSession = getUserSession(userId);
-            newSession.step = "add_new_car";
-            newSession.data.phone = user.phone;
-            newSession.data.isExistingUser = true;
-            newSession.data.firstName = user.firstName;
-            newSession.data.lastName = user.lastName;
-            newSession.data.username = user.username;
-            
-            await bot.sendMessage(chatId, "🚗 *Yangi avtomobil raqamini kiriting:*\n\nMasalan: 01A777AA\n\n⚠️ Siz maksimum " + MAX_CARS_PER_USER + " tagacha avtomobil qo'sha olasiz.\n📊 Hozirgi avtomobillar soni: " + user.cars.length + "/" + MAX_CARS_PER_USER, {
-                parse_mode: "Markdown",
-                ...removeKeyboard()
-            });
-        }
-        else if (text === "🎁 Mening bonuslarim") {
-            let bonusText = "🎁 *MENGING BONUSLARIM*\n\n📌 *Qoida:* Har 5 diagnostikada 1 ta BEPUL!\n━━━━━━━━━━━━━━━━━━\n\n";
-            for (const car of user.cars) {
-                const nextFree = 5 - car.bonusCount;
-                bonusText += "🚗 *" + car.carNumber + "*\n";
-                bonusText += "📊 To'plangan: " + car.bonusCount + "/5\n";
-                bonusText += "🎉 Bepul diagnostika: " + car.freeDiagnostics + " ta\n";
-                
-                if (car.freeDiagnostics > 0) {
-                    bonusText += "✅ *Sizda " + car.freeDiagnostics + " ta BEPUL diagnostika bor!*\n";
-                    bonusText += "💡 Keyingi diagnostikangiz BEPUL bo'ladi!\n";
-                } else if (nextFree > 0) {
-                    bonusText += "📌 *Keyingi BEPUL diagnostika:* " + nextFree + " ta diagnostikadan keyin\n";
-                    bonusText += "   (" + nextFree + " ta to'lovli diagnostika qilsangiz, 1 ta BEPUL olasiz)\n";
-                } else if (nextFree === 0 && car.bonusCount === 5) {
-                    bonusText += "🎉 *DARHOL BEPUL diagnostika qozondingiz!*\n";
-                    bonusText += "✅ Keyingi diagnostikangiz BEPUL bo'ladi!\n";
-                }
-                
-                bonusText += "━━━━━━━━━━━━━━━━━━\n";
-            }
-            bonusText += "\n🎯 *QANDAY ISHLAYDI?*\n";
-            bonusText += "• Har 5 ta to'lovli diagnostika = 1 ta BEPUL\n";
-            bonusText += "• Har bir avtomobil uchun bonus alohida hisoblanadi\n";
-            bonusText += "• Bepul diagnostika cheksiz muddatga amal qiladi\n";
-            bonusText += "• Admin diagnostika qo'shganda avtomatik hisoblanadi";
-            
-            await bot.sendMessage(chatId, bonusText, { parse_mode: "Markdown" });
-        }
-        else if (text === "📋 Diagnostika tarixim") {
-            const diags = getUserDiagnostics(user.phone, 15);
-            if (diags.length === 0) {
-                await bot.sendMessage(chatId, "📭 *Sizda hali diagnostikalar mavjud emas!*", { parse_mode: "Markdown" });
-                return;
-            }
-            
-            for (const d of diags) {
-                let diagText = "📅 *" + new Date(d.date).toLocaleDateString() + "*\n";
-                diagText += "🕐 " + new Date(d.date).toLocaleTimeString() + "\n";
-                diagText += "🚗 *" + d.carNumber + "*\n\n";
-                diagText += "📝 *Bajarilgan ishlar:*\n" + d.workDescription + "\n\n";
-                
-                if (d.additionalNotes && d.additionalNotes !== "") {
-                    diagText += "➕ *Qo'shimcha eslatmalar:*\n" + d.additionalNotes + "\n\n";
-                }
-                
-                diagText += "💰 *Narx:* " + (d.price > 0 ? d.price.toLocaleString() + " so'm" : "BEPUL") + "\n";
-                diagText += "━━━━━━━━━━━━━━━━━━\n";
-                
-                await bot.sendMessage(chatId, diagText, { parse_mode: "Markdown" });
-            }
-        }
-        else if (text === "📹 Video galereya") {
-            await showVideoGallery(chatId);
-        }
-        else if (text === "📸 Bizning Instagram") {
-            await bot.sendMessage(chatId, "📸 *BIZNING INSTAGRAM*\n\n🔗 " + INSTAGRAM_LINK, {
-                parse_mode: "Markdown",
-                reply_markup: {
-                    inline_keyboard: [[{ text: "📸 Instagramga o'tish", url: INSTAGRAM_LINK }]]
-                }
-            });
-        }
-        else if (text === "👥 Telegram guruhimiz") {
-            await bot.sendMessage(chatId, "👥 *TELEGRAM GURUHIMIZ*\n\n🔗 " + TELEGRAM_GROUP_LINK, {
-                parse_mode: "Markdown",
-                reply_markup: {
-                    inline_keyboard: [[{ text: "👥 Guruhga o'tish", url: TELEGRAM_GROUP_LINK }]]
-                }
-            });
-        }
-        else if (text === "ℹ️ Ma'lumot") {
-            await bot.sendMessage(chatId, "ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 Bitta telefon bilan " + MAX_CARS_PER_USER + " tagacha avtomobil\n📞 Aloqa: " + ADMIN_PHONE + "\n📌 Bot versiyasi: " + BOT_VERSION + "\n🔗 Bot linki: " + NEW_BOT_LINK + "\n📸 Instagram: " + INSTAGRAM_LINK + "\n👥 Telegram guruhimiz: " + TELEGRAM_GROUP_LINK, { parse_mode: "Markdown" });
-        }
-        else if (text === "❌ Asosiy menyu") {
-            clearUserSession(userId);
-            await sendMainMenu(chatId, false, deviceType);
-        }
-        return;
-    }
-    
-    // AGAR HECH QANDAY TUGMA YOKI SESSION YO'Q BO'LSA
-    await bot.sendMessage(chatId, "❌ *Tushunarsiz buyruq!* Menyudan foydalaning.\n\n/start - Bosh sahifa\n/profile - Mening sahifam\n/my_cars - Mening avtomobillarim\n/my_bonus - Mening bonuslarim\n/history - Diagnostika tarixi\n/info - Ma'lumot", { parse_mode: "Markdown" });
+    // FOYDALANUVCHI MATNLI XABAR YUBORSA (inline keyboard ishlatilgani uchun, bu qismga kelmasligi kerak)
+    // Agar kelib qolsa, xatolik xabari chiqariladi
+    await bot.sendMessage(chatId, "❌ *Tushunarsiz buyruq!* Iltimos, quyidagi tugmalardan foydalaning:", {
+        parse_mode: "Markdown",
+        ...getUserInlineKeyboard()
+    });
 });
 
-// -------------------- CALLBACK QUERY HANDLER --------------------
+// -------------------- CALLBACK QUERY HANDLER (FOYDALANUVCHI UCHUN) --------------------
 bot.on("callback_query", async (query) => {
     const chatId = query.message.chat.id;
     const data = query.data;
@@ -2065,244 +1876,194 @@ bot.on("callback_query", async (query) => {
         await bot.sendMessage(chatId, "ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 Bitta telefon bilan " + MAX_CARS_PER_USER + " tagacha avtomobil\n📞 Aloqa: " + ADMIN_PHONE + "\n📌 Bot versiyasi: " + BOT_VERSION + "\n🔗 Bot linki: " + NEW_BOT_LINK + "\n📸 Instagram: " + INSTAGRAM_LINK + "\n👥 Telegram guruhimiz: " + TELEGRAM_GROUP_LINK, { parse_mode: "Markdown" });
     }
     
-    // ======================== ADMIN CALLBACK'LARI ========================
-    else if (data === "admin_statistics") {
+    // ======================== ADMIN CALLBACK'LARI (FAQAT ADMIN UCHUN) ========================
+    else if (data === "admin_statistics" || data === "admin_users" || data === "admin_add_diagnostic" ||
+             data === "admin_near_bonus" || data === "admin_errors" || data === "admin_diagnostics_history" ||
+             data === "admin_today_diagnostics" || data === "admin_get_report" || data === "admin_video_gallery" ||
+             data === "admin_upload_video" || data === "admin_create_backup" || data === "admin_restore_backup" ||
+             data === "admin_manage_users" || data === "admin_security" || data === "admin_update_mode" ||
+             data === "admin_disable_update") {
+        
         if (!isAdmin(userId)) {
             await bot.sendMessage(chatId, "❌ Bu amal uchun ruxsat yo'q!", { parse_mode: "Markdown" });
             return;
         }
-        const stats = getStatistics();
-        await bot.sendMessage(chatId, "📊 *STATISTIKA*\n\n👥 Faol foydalanuvchilar: " + stats.totalUsers + "\n🚫 Bloklanganlar: " + stats.blockedUsers + "\n🚗 Avtomobillar: " + stats.totalCars + "\n🔧 Jami: " + stats.totalDiagnostics + "\n💰 To'lovli: " + stats.paidDiagnostics + "\n🎉 Bepul: " + stats.freeDiagnostics + "\n💵 Daromad: " + stats.totalIncome.toLocaleString() + " so'm\n⚠️ Xatoliklar: " + stats.totalErrors + "\n📹 Videolar: " + stats.totalVideos + " ta\n👁️ Video ko'rishlar: " + stats.totalVideoViews + " ta\n📌 Versiya: " + stats.currentVersion + "\n🔄 Yangilanish rejimi: " + (stats.isUpdateMode ? "Faol" : "O'chirilgan"), { parse_mode: "Markdown" });
-    }
-    else if (data === "admin_users") {
-        if (!isAdmin(userId)) {
-            await bot.sendMessage(chatId, "❌ Bu amal uchun ruxsat yo'q!", { parse_mode: "Markdown" });
-            return;
+        
+        // Admin callback'larini qayta ishlash
+        if (data === "admin_statistics") {
+            const stats = getStatistics();
+            await bot.sendMessage(chatId, "📊 *STATISTIKA*\n\n👥 Faol foydalanuvchilar: " + stats.totalUsers + "\n🚫 Bloklanganlar: " + stats.blockedUsers + "\n🚗 Avtomobillar: " + stats.totalCars + "\n🔧 Jami: " + stats.totalDiagnostics + "\n💰 To'lovli: " + stats.paidDiagnostics + "\n🎉 Bepul: " + stats.freeDiagnostics + "\n💵 Daromad: " + stats.totalIncome.toLocaleString() + " so'm\n⚠️ Xatoliklar: " + stats.totalErrors + "\n📹 Videolar: " + stats.totalVideos + " ta\n👁️ Video ko'rishlar: " + stats.totalVideoViews + " ta\n📌 Versiya: " + stats.currentVersion + "\n🔄 Yangilanish rejimi: " + (stats.isUpdateMode ? "Faol" : "O'chirilgan"), { parse_mode: "Markdown" });
         }
-        const usersList = getAllUsersWithDetails();
-        if (usersList.length === 0) {
-            await bot.sendMessage(chatId, "📭 Hech qanday foydalanuvchi yo'q", { parse_mode: "Markdown" });
-            return;
+        else if (data === "admin_users") {
+            const usersList = getAllUsersWithDetails();
+            if (usersList.length === 0) {
+                await bot.sendMessage(chatId, "📭 Hech qanday foydalanuvchi yo'q", { parse_mode: "Markdown" });
+                return;
+            }
+            let msg = "👥 *FOYDALANUVCHILAR*\n━━━━━━━━━━━━━━━━━━\n\n";
+            usersList.slice(0, 15).forEach((u, index) => {
+                const status = u.isBlocked ? "🔴" : "🟢";
+                msg += status + " *" + (index + 1) + ". " + (u.fullName || "Ism kiritilmagan") + "*\n";
+                msg += "📞 " + u.phone + "\n";
+                msg += "🚗 " + u.cars.map(c => c.carNumber).join(", ") + "\n";
+                msg += "📊 " + u.totalDiagnostics + " ta diagnostika\n";
+                msg += "━━━━━━━━━━━━━━━━━━\n";
+            });
+            await bot.sendMessage(chatId, msg, { parse_mode: "Markdown" });
         }
-        let msg = "👥 *FOYDALANUVCHILAR*\n━━━━━━━━━━━━━━━━━━\n\n";
-        usersList.slice(0, 15).forEach((u, index) => {
-            const status = u.isBlocked ? "🔴" : "🟢";
-            msg += status + " *" + (index + 1) + ". " + (u.fullName || "Ism kiritilmagan") + "*\n";
-            msg += "📞 " + u.phone + "\n";
-            msg += "🚗 " + u.cars.map(c => c.carNumber).join(", ") + "\n";
-            msg += "📊 " + u.totalDiagnostics + " ta diagnostika\n";
-            msg += "━━━━━━━━━━━━━━━━━━\n";
-        });
-        await bot.sendMessage(chatId, msg, { parse_mode: "Markdown" });
-    }
-    else if (data === "admin_add_diagnostic") {
-        if (!isAdmin(userId)) {
-            await bot.sendMessage(chatId, "❌ Bu amal uchun ruxsat yo'q!", { parse_mode: "Markdown" });
-            return;
+        else if (data === "admin_add_diagnostic") {
+            const session = getUserSession(userId);
+            session.step = "admin_add_diagnostic";
+            await bot.sendMessage(chatId, "🔧 *Diagnostika qo'shish*\n\n🚗 Avtomobil raqamini kiriting:", { parse_mode: "Markdown", reply_markup: { remove_keyboard: true } });
         }
-        const session = getUserSession(userId);
-        session.step = "admin_add_diagnostic";
-        await bot.sendMessage(chatId, "🔧 *Diagnostika qo'shish*\n\n🚗 Avtomobil raqamini kiriting:", { parse_mode: "Markdown", reply_markup: { remove_keyboard: true } });
-    }
-    else if (data === "admin_near_bonus") {
-        if (!isAdmin(userId)) {
-            await bot.sendMessage(chatId, "❌ Bu amal uchun ruxsat yo'q!", { parse_mode: "Markdown" });
-            return;
+        else if (data === "admin_near_bonus") {
+            const nearBonus = getNearBonusCars();
+            if (nearBonus.length === 0) {
+                await bot.sendMessage(chatId, "📭 Bonusga yaqin avtomobillar yo'q", { parse_mode: "Markdown" });
+                return;
+            }
+            let msg = "🎁 *BONUSGA YAQIN AVTOMOBILLAR*\n━━━━━━━━━━━━━━━━━━\n\n";
+            nearBonus.forEach(c => {
+                msg += "👤 " + c.fullName + "\n";
+                msg += "🚗 " + c.carNumber + "\n";
+                msg += "📞 " + c.phone + "\n";
+                msg += "🎁 " + c.bonusCount + "/5 diagnostika\n";
+                msg += "📌 Keyingi BEPUL: " + c.remaining + " ta diagnostikadan keyin\n";
+                msg += "━━━━━━━━━━━━━━━━━━\n";
+            });
+            await bot.sendMessage(chatId, msg, { parse_mode: "Markdown" });
         }
-        const nearBonus = getNearBonusCars();
-        if (nearBonus.length === 0) {
-            await bot.sendMessage(chatId, "📭 Bonusga yaqin avtomobillar yo'q", { parse_mode: "Markdown" });
-            return;
+        else if (data === "admin_errors") {
+            const errorsList = getErrors();
+            if (errorsList.length === 0) {
+                await bot.sendMessage(chatId, "✅ Xatoliklar yo'q", { parse_mode: "Markdown" });
+                return;
+            }
+            let msg = "⚠️ *XATOLIKLAR*\n\n";
+            errorsList.slice(0, 10).forEach(e => {
+                msg += "🚗 " + e.carNumber + "\n";
+                msg += "📝 " + e.errorDescription + "\n";
+                msg += "📅 " + new Date(e.date).toLocaleDateString() + "\n";
+                msg += "━━━━━━━━━━━━━━━━━━\n";
+            });
+            await bot.sendMessage(chatId, msg, { parse_mode: "Markdown" });
         }
-        let msg = "🎁 *BONUSGA YAQIN AVTOMOBILLAR*\n━━━━━━━━━━━━━━━━━━\n\n";
-        nearBonus.forEach(c => {
-            msg += "👤 " + c.fullName + "\n";
-            msg += "🚗 " + c.carNumber + "\n";
-            msg += "📞 " + c.phone + "\n";
-            msg += "🎁 " + c.bonusCount + "/5 diagnostika\n";
-            msg += "📌 Keyingi BEPUL: " + c.remaining + " ta diagnostikadan keyin\n";
-            msg += "━━━━━━━━━━━━━━━━━━\n";
-        });
-        await bot.sendMessage(chatId, msg, { parse_mode: "Markdown" });
-    }
-    else if (data === "admin_errors") {
-        if (!isAdmin(userId)) {
-            await bot.sendMessage(chatId, "❌ Bu amal uchun ruxsat yo'q!", { parse_mode: "Markdown" });
-            return;
+        else if (data === "admin_diagnostics_history") {
+            const diags = getAllDiagnostics(20);
+            if (diags.length === 0) {
+                await bot.sendMessage(chatId, "📭 Diagnostikalar yo'q", { parse_mode: "Markdown" });
+                return;
+            }
+            for (const d of diags.slice(0, 10)) {
+                await bot.sendMessage(chatId, "📅 " + new Date(d.date).toLocaleDateString() + "\n🚗 " + d.carNumber + "\n📝 " + d.workDescription + "\n💰 " + (d.price > 0 ? d.price.toLocaleString() + " so'm" : "BEPUL"), { parse_mode: "Markdown" });
+            }
         }
-        const errorsList = getErrors();
-        if (errorsList.length === 0) {
-            await bot.sendMessage(chatId, "✅ Xatoliklar yo'q", { parse_mode: "Markdown" });
-            return;
+        else if (data === "admin_today_diagnostics") {
+            const diags = getTodayDiagnostics();
+            if (diags.length === 0) {
+                await bot.sendMessage(chatId, "📭 Bugun diagnostika yo'q", { parse_mode: "Markdown" });
+                return;
+            }
+            let msg = "📅 *BUGUNGI DIAGNOSTIKALAR*\n\n";
+            diags.forEach(d => {
+                msg += "🚗 " + d.carNumber + "\n";
+                msg += "📝 " + d.workDescription + "\n";
+                msg += "💰 " + (d.price > 0 ? d.price.toLocaleString() + " so'm" : "BEPUL") + "\n";
+                msg += "━━━━━━━━━━━━━━━━━━\n";
+            });
+            await bot.sendMessage(chatId, msg, { parse_mode: "Markdown" });
         }
-        let msg = "⚠️ *XATOLIKLAR*\n\n";
-        errorsList.slice(0, 10).forEach(e => {
-            msg += "🚗 " + e.carNumber + "\n";
-            msg += "📝 " + e.errorDescription + "\n";
-            msg += "📅 " + new Date(e.date).toLocaleDateString() + "\n";
-            msg += "━━━━━━━━━━━━━━━━━━\n";
-        });
-        await bot.sendMessage(chatId, msg, { parse_mode: "Markdown" });
-    }
-    else if (data === "admin_diagnostics_history") {
-        if (!isAdmin(userId)) {
-            await bot.sendMessage(chatId, "❌ Bu amal uchun ruxsat yo'q!", { parse_mode: "Markdown" });
-            return;
+        else if (data === "admin_get_report") {
+            await bot.sendMessage(chatId, "📄 *Hisobot tayyorlanmoqda...*", { parse_mode: "Markdown" });
+            try {
+                const allDiagnostics = getAllDiagnostics(500);
+                const filepath = await generateDiagnosticsReport(allDiagnostics);
+                await bot.sendDocument(chatId, filepath, { caption: "📊 Diagnostika hisoboti\n📅 " + new Date().toLocaleString() });
+                setTimeout(() => fs.unlinkSync(filepath), 60000);
+            } catch (error) {
+                await bot.sendMessage(chatId, "❌ *Xatolik!*", { parse_mode: "Markdown" });
+            }
         }
-        const diags = getAllDiagnostics(20);
-        if (diags.length === 0) {
-            await bot.sendMessage(chatId, "📭 Diagnostikalar yo'q", { parse_mode: "Markdown" });
-            return;
+        else if (data === "admin_video_gallery") {
+            await showVideoGallery(chatId);
         }
-        for (const d of diags.slice(0, 10)) {
-            await bot.sendMessage(chatId, "📅 " + new Date(d.date).toLocaleDateString() + "\n🚗 " + d.carNumber + "\n📝 " + d.workDescription + "\n💰 " + (d.price > 0 ? d.price.toLocaleString() + " so'm" : "BEPUL"), { parse_mode: "Markdown" });
+        else if (data === "admin_upload_video") {
+            const session = getUserSession(userId);
+            session.step = "admin_waiting_video";
+            session.data = {};
+            await bot.sendMessage(chatId, "📤 *VIDEO YUKLASH*\n\nIltimos, video faylni yuboring:\n\n📹 MP4 formatida, 50MB gacha", { parse_mode: "Markdown" });
         }
-    }
-    else if (data === "admin_today_diagnostics") {
-        if (!isAdmin(userId)) {
-            await bot.sendMessage(chatId, "❌ Bu amal uchun ruxsat yo'q!", { parse_mode: "Markdown" });
-            return;
+        else if (data === "admin_create_backup") {
+            await bot.sendMessage(chatId, "💾 *Backup yaratilmoqda...*", { parse_mode: "Markdown" });
+            createBackup();
+            await bot.sendMessage(chatId, "✅ *Backup yaratildi!*", { parse_mode: "Markdown" });
         }
-        const diags = getTodayDiagnostics();
-        if (diags.length === 0) {
-            await bot.sendMessage(chatId, "📭 Bugun diagnostika yo'q", { parse_mode: "Markdown" });
-            return;
+        else if (data === "admin_restore_backup") {
+            const backups = listBackups();
+            if (backups.length === 0) {
+                await bot.sendMessage(chatId, "❌ *Backup topilmadi!*", { parse_mode: "Markdown" });
+            } else {
+                let msg = "🔄 *DATABASE TIKLASH*\n\nQuyidagi backup'lardan birini tanlang:\n\n";
+                const keyboard = backups.slice(0, 10).map(b => [{ text: "📁 " + b.name, callback_data: "restore_" + b.name }]);
+                keyboard.push([{ text: "❌ Bekor qilish", callback_data: "restore_cancel" }]);
+                await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: keyboard } });
+            }
         }
-        let msg = "📅 *BUGUNGI DIAGNOSTIKALAR*\n\n";
-        diags.forEach(d => {
-            msg += "🚗 " + d.carNumber + "\n";
-            msg += "📝 " + d.workDescription + "\n";
-            msg += "💰 " + (d.price > 0 ? d.price.toLocaleString() + " so'm" : "BEPUL") + "\n";
-            msg += "━━━━━━━━━━━━━━━━━━\n";
-        });
-        await bot.sendMessage(chatId, msg, { parse_mode: "Markdown" });
-    }
-    else if (data === "admin_get_report") {
-        if (!isAdmin(userId)) {
-            await bot.sendMessage(chatId, "❌ Bu amal uchun ruxsat yo'q!", { parse_mode: "Markdown" });
-            return;
-        }
-        await bot.sendMessage(chatId, "📄 *Hisobot tayyorlanmoqda...*", { parse_mode: "Markdown" });
-        try {
-            const allDiagnostics = getAllDiagnostics(500);
-            const filepath = await generateDiagnosticsReport(allDiagnostics);
-            await bot.sendDocument(chatId, filepath, { caption: "📊 Diagnostika hisoboti\n📅 " + new Date().toLocaleString() });
-            setTimeout(() => fs.unlinkSync(filepath), 60000);
-        } catch (error) {
-            await bot.sendMessage(chatId, "❌ *Xatolik!*", { parse_mode: "Markdown" });
-        }
-    }
-    else if (data === "admin_video_gallery") {
-        if (!isAdmin(userId)) {
-            await bot.sendMessage(chatId, "❌ Bu amal uchun ruxsat yo'q!", { parse_mode: "Markdown" });
-            return;
-        }
-        await showVideoGallery(chatId);
-    }
-    else if (data === "admin_upload_video") {
-        if (!isAdmin(userId)) {
-            await bot.sendMessage(chatId, "❌ Bu amal uchun ruxsat yo'q!", { parse_mode: "Markdown" });
-            return;
-        }
-        const session = getUserSession(userId);
-        session.step = "admin_waiting_video";
-        session.data = {};
-        await bot.sendMessage(chatId, "📤 *VIDEO YUKLASH*\n\nIltimos, video faylni yuboring:\n\n📹 MP4 formatida, 50MB gacha", { parse_mode: "Markdown" });
-    }
-    else if (data === "admin_create_backup") {
-        if (!isAdmin(userId)) {
-            await bot.sendMessage(chatId, "❌ Bu amal uchun ruxsat yo'q!", { parse_mode: "Markdown" });
-            return;
-        }
-        await bot.sendMessage(chatId, "💾 *Backup yaratilmoqda...*", { parse_mode: "Markdown" });
-        createBackup();
-        await bot.sendMessage(chatId, "✅ *Backup yaratildi!*", { parse_mode: "Markdown" });
-    }
-    else if (data === "admin_restore_backup") {
-        if (!isAdmin(userId)) {
-            await bot.sendMessage(chatId, "❌ Bu amal uchun ruxsat yo'q!", { parse_mode: "Markdown" });
-            return;
-        }
-        const backups = listBackups();
-        if (backups.length === 0) {
-            await bot.sendMessage(chatId, "❌ *Backup topilmadi!*", { parse_mode: "Markdown" });
-        } else {
-            let msg = "🔄 *DATABASE TIKLASH*\n\nQuyidagi backup'lardan birini tanlang:\n\n";
-            const keyboard = backups.slice(0, 10).map(b => [{ text: "📁 " + b.name, callback_data: "restore_" + b.name }]);
-            keyboard.push([{ text: "❌ Bekor qilish", callback_data: "restore_cancel" }]);
+        else if (data === "admin_manage_users") {
+            const activeUsers = getActiveUsers();
+            const blockedUsers = getBlockedUsers();
+            const allUsers = [...activeUsers, ...blockedUsers];
+            
+            if (allUsers.length === 0) {
+                await bot.sendMessage(chatId, "📭 Hech qanday foydalanuvchi yo'q", { parse_mode: "Markdown" });
+                return;
+            }
+            
+            let msg = "👥 *FOYDALANUVCHILARNI BOSHQARISH*\n\n🟢 Faol: " + activeUsers.length + "\n🔴 Bloklangan: " + blockedUsers.length + "\n\n📌 Foydalanuvchini tanlang:\n\n";
+            
+            const keyboard = [];
+            allUsers.slice(0, 10).forEach(userObj => {
+                keyboard.push([{ text: (userObj.isBlocked ? "🔴" : "🟢") + " " + (userObj.fullName || userObj.phone), callback_data: "manage_user_" + userObj.userId }]);
+            });
+            keyboard.push([{ text: "❌ Bekor qilish", callback_data: "user_manage_cancel" }]);
+            
             await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: keyboard } });
         }
-    }
-    else if (data === "admin_manage_users") {
-        if (!isAdmin(userId)) {
-            await bot.sendMessage(chatId, "❌ Bu amal uchun ruxsat yo'q!", { parse_mode: "Markdown" });
-            return;
-        }
-        const activeUsers = getActiveUsers();
-        const blockedUsers = getBlockedUsers();
-        const allUsers = [...activeUsers, ...blockedUsers];
-        
-        if (allUsers.length === 0) {
-            await bot.sendMessage(chatId, "📭 Hech qanday foydalanuvchi yo'q", { parse_mode: "Markdown" });
-            return;
-        }
-        
-        let msg = "👥 *FOYDALANUVCHILARNI BOSHQARISH*\n\n🟢 Faol: " + activeUsers.length + "\n🔴 Bloklangan: " + blockedUsers.length + "\n\n📌 Foydalanuvchini tanlang:\n\n";
-        
-        const keyboard = [];
-        allUsers.slice(0, 10).forEach(userObj => {
-            keyboard.push([{ text: (userObj.isBlocked ? "🔴" : "🟢") + " " + (userObj.fullName || userObj.phone), callback_data: "manage_user_" + userObj.userId }]);
-        });
-        keyboard.push([{ text: "❌ Bekor qilish", callback_data: "user_manage_cancel" }]);
-        
-        await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: keyboard } });
-    }
-    else if (data === "admin_security") {
-        if (!isAdmin(userId)) {
-            await bot.sendMessage(chatId, "❌ Bu amal uchun ruxsat yo'q!", { parse_mode: "Markdown" });
-            return;
-        }
-        if (!isSuperAdmin(userId) && !canEditCode(userId)) {
-            await bot.sendMessage(chatId, "❌ *Sizda bu amalni bajarish uchun ruxsat yo'q!*", { parse_mode: "Markdown" });
-            return;
-        }
-        
-        const keyboard = [
-            [{ text: "👥 Ruxsat berilgan adminlar", callback_data: "security_allowed_admins" }],
-            [{ text: "➕ Admin qo'shish", callback_data: "security_add_admin" }],
-            [{ text: "➖ Admin o'chirish", callback_data: "security_remove_admin" }],
-            [{ text: "📜 Xavfsizlik jurnali", callback_data: "security_log" }],
-            [{ text: "🔙 Orqaga", callback_data: "security_back" }]
-        ];
-        
-        await bot.sendMessage(chatId, "🔐 *XAVFSIZLIK SOZLAMALARI*\n\nQuyidagi amallardan birini tanlang:", {
-            parse_mode: "Markdown",
-            reply_markup: { inline_keyboard: keyboard }
-        });
-    }
-    else if (data === "admin_update_mode") {
-        if (!isAdmin(userId)) {
-            await bot.sendMessage(chatId, "❌ Bu amal uchun ruxsat yo'q!", { parse_mode: "Markdown" });
-            return;
-        }
-        await bot.sendMessage(chatId, "⚠️ *YANGI VERSIYAGA O'TISH*\n\nDavom etasizmi?", {
-            parse_mode: "Markdown",
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: "✅ Ha", callback_data: "confirm_update" }],
-                    [{ text: "❌ Yo'q", callback_data: "cancel_update" }]
-                ]
+        else if (data === "admin_security") {
+            if (!isSuperAdmin(userId) && !canEditCode(userId)) {
+                await bot.sendMessage(chatId, "❌ *Sizda bu amalni bajarish uchun ruxsat yo'q!*", { parse_mode: "Markdown" });
+                return;
             }
-        });
-    }
-    else if (data === "admin_disable_update") {
-        if (!isAdmin(userId)) {
-            await bot.sendMessage(chatId, "❌ Bu amal uchun ruxsat yo'q!", { parse_mode: "Markdown" });
-            return;
+            
+            const keyboard = [
+                [{ text: "👥 Ruxsat berilgan adminlar", callback_data: "security_allowed_admins" }],
+                [{ text: "➕ Admin qo'shish", callback_data: "security_add_admin" }],
+                [{ text: "➖ Admin o'chirish", callback_data: "security_remove_admin" }],
+                [{ text: "📜 Xavfsizlik jurnali", callback_data: "security_log" }],
+                [{ text: "🔙 Orqaga", callback_data: "security_back" }]
+            ];
+            
+            await bot.sendMessage(chatId, "🔐 *XAVFSIZLIK SOZLAMALARI*\n\nQuyidagi amallardan birini tanlang:", {
+                parse_mode: "Markdown",
+                reply_markup: { inline_keyboard: keyboard }
+            });
         }
-        disableUpdateMode();
-        await bot.sendMessage(chatId, "✅ *Yangilanish rejimi o'chirildi!*", { parse_mode: "Markdown" });
-        await sendMainMenu(chatId, true, getUserDevice(userId));
+        else if (data === "admin_update_mode") {
+            await bot.sendMessage(chatId, "⚠️ *YANGI VERSIYAGA O'TISH*\n\nDavom etasizmi?", {
+                parse_mode: "Markdown",
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "✅ Ha", callback_data: "confirm_update" }],
+                        [{ text: "❌ Yo'q", callback_data: "cancel_update" }]
+                    ]
+                }
+            });
+        }
+        else if (data === "admin_disable_update") {
+            disableUpdateMode();
+            await bot.sendMessage(chatId, "✅ *Yangilanish rejimi o'chirildi!*", { parse_mode: "Markdown" });
+            await sendMainMenu(chatId, true, getUserDevice(userId));
+        }
     }
     
     // ======================== SECURITY CALLBACK'LARI ========================
