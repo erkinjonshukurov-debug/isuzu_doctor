@@ -1695,7 +1695,7 @@ bot.on("callback_query", async (query) => {
         return;
     }
     
-    // FOYDALANUVCHI CALLBACK'LARI
+    // ======================== FOYDALANUVCHI CALLBACK'LARI ========================
     if (data === "user_profile") {
         const carsList = user.cars.map(c => "🚗 " + c.carNumber + " (" + c.totalDiagnostics + " ta diagnostika)").join("\n");
         await bot.sendMessage(chatId, "📊 *MENGING SAHIFAM*\n\n👤 *Ism:* " + (user.fullName || "Kiritilmagan") + "\n📞 *Telefon:* " + user.phone + "\n🚗 *Avtomobillar:* " + user.cars.length + "/" + MAX_CARS_PER_USER + "\n\n" + carsList + "\n\n🎁 *Umumiy bonuslar:* " + (user.totalBonusCount || 0) + "\n🎉 *Bepul diagnostika:* " + (user.totalFreeDiagnostics || 0) + " ta\n📊 *Jami diagnostika:* " + (user.totalDiagnosticsAll || 0) + " ta\n📌 *Versiya:* " + BOT_VERSION, { parse_mode: "Markdown" });
@@ -1819,7 +1819,7 @@ bot.on("callback_query", async (query) => {
         await bot.sendMessage(chatId, "ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 Bitta telefon bilan " + MAX_CARS_PER_USER + " tagacha avtomobil\n📞 Aloqa: " + ADMIN_PHONE + "\n📌 Bot versiyasi: " + BOT_VERSION + "\n🔗 Bot linki: " + NEW_BOT_LINK + "\n📸 Instagram: " + INSTAGRAM_LINK + "\n👥 Telegram guruhimiz: " + TELEGRAM_GROUP_LINK, { parse_mode: "Markdown" });
     }
     
-    // ADMIN CALLBACK'LARI
+    // ======================== ADMIN CALLBACK'LARI ========================
     else if (data === "admin_statistics") {
         if (!isAdmin(userId)) {
             await bot.sendMessage(chatId, "❌ Bu amal uchun ruxsat yo'q!", { parse_mode: "Markdown" });
@@ -2059,7 +2059,7 @@ bot.on("callback_query", async (query) => {
         await sendMainMenu(chatId, true, getUserDevice(userId));
     }
     
-    // SECURITY CALLBACK'LARI
+    // ======================== SECURITY CALLBACK'LARI ========================
     else if (data === "security_allowed_admins") {
         if (!isAdmin(userId)) {
             await bot.sendMessage(chatId, "❌ Bu amal uchun ruxsat yo'q!", { parse_mode: "Markdown" });
@@ -2257,7 +2257,7 @@ bot.on("callback_query", async (query) => {
         await sendMainMenu(chatId, true, getUserDevice(userId));
     }
     
-    // VIDEO CALLBACK'LARI
+    // ======================== VIDEO CALLBACK'LARI ========================
     else if (data.startsWith("watch_video_")) {
         const videoId = parseInt(data.split("_")[2]);
         const video = videoList.find(v => v.id === videoId);
