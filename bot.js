@@ -84,14 +84,12 @@ function saveVideos() {
     fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videoList, null, 2));
 }
 
-function addVideo(videoFileId, title, description, duration, thumbnail, adminId) {
+function addVideo(videoFileId, title, description, adminId) {
     const newVideo = {
         id: Date.now(),
         fileId: videoFileId,
         title: title,
         description: description || '',
-        duration: duration || 0,
-        thumbnail: thumbnail || null,
         views: 0,
         likes: 0,
         likedBy: [],
@@ -103,17 +101,6 @@ function addVideo(videoFileId, title, description, duration, thumbnail, adminId)
     saveVideos();
     addSecurityLog('VIDEO_UPLOADED', adminId, `Video yuklandi: ${title}`);
     return newVideo;
-}
-
-function deleteVideo(videoId, adminId) {
-    const index = videoList.findIndex(v => v.id === videoId);
-    if (index === -1) return false;
-    
-    const video = videoList[index];
-    videoList.splice(index, 1);
-    saveVideos();
-    addSecurityLog('VIDEO_DELETED', adminId, `Video o'chirildi: ${video.title}`);
-    return true;
 }
 
 function updateVideoViews(videoId) {
@@ -1322,8 +1309,13 @@ bot.on('message', async (msg) => {
     
     const session = getUserSession(userId);
     
-    // Video yuklash session'lari
+    // Video yuklash
     if (session.step === 'admin_waiting_video') {
+        if (!isAdmin(userId)) {
+            clearUserSession(userId);
+            await sendMainMenu(chatId, false, getUserDevice(userId));
+            return;
+        }
         if (msg.video) {
             session.data.videoFileId = msg.video.file_id;
             session.step = 'admin_waiting_video_title';
@@ -1335,6 +1327,11 @@ bot.on('message', async (msg) => {
     }
     
     if (session.step === 'admin_waiting_video_title') {
+        if (!isAdmin(userId)) {
+            clearUserSession(userId);
+            await sendMainMenu(chatId, false, getUserDevice(userId));
+            return;
+        }
         session.data.title = text;
         session.step = 'admin_waiting_video_description';
         await bot.sendMessage(chatId, `✅ *Nom qabul qilindi:* ${text}\n\n📝 Endi video tavsifini kiriting (ixtiyoriy):\n\n"❌ Bekor qilish" - bekor qilish uchun`, { parse_mode: 'Markdown' });
@@ -1342,18 +1339,16 @@ bot.on('message', async (msg) => {
     }
     
     if (session.step === 'admin_waiting_video_description') {
+        if (!isAdmin(userId)) {
+            clearUserSession(userId);
+            await sendMainMenu(chatId, false, getUserDevice(userId));
+            return;
+        }
         session.data.description = text === '❌ Bekor qilish' ? '' : text;
         
-        const newVideo = addVideo(
-            session.data.videoFileId,
-            session.data.title,
-            session.data.description,
-            0,
-            null,
-            userId
-        );
+        addVideo(session.data.videoFileId, session.data.title, session.data.description, userId);
         
-        await bot.sendMessage(chatId, `✅ *Video muvaffaqiyatli yuklandi!*\n\n📹 *Nomi:* ${newVideo.title}\n🆔 ID: ${newVideo.id}\n📅 Sana: ${new Date().toLocaleString()}`, { parse_mode: 'Markdown' });
+        await bot.sendMessage(chatId, `✅ *Video muvaffaqiyatli yuklandi!*\n\n📹 *Nomi:* ${session.data.title}\n📅 Sana: ${new Date().toLocaleString()}`, { parse_mode: 'Markdown' });
         
         clearUserSession(userId);
         await sendMainMenu(chatId, true, getUserDevice(userId));
@@ -1381,7 +1376,7 @@ bot.on('message', async (msg) => {
         
         try {
             await sendReminder(chatId);
-            await bot.sendMessage(chatId, `✅ *Siz muvaffaqiyatli ro'yxatdan o'tdingiz, ${userFullName || 'hurmatli mijoz'}!*\n\n👤 Ism: ${userFullName || 'Kiritilmagan'}\n🚗 Avtomobil: ${carNumber}\n📞 Telefon: ${session.data.phone}\n\n🎁 *Bonus tizimi:* Har 5 diagnostikada 1 ta BEPUL!\n📹 *Video galereya:* Ishlarimizni videoda kuzating!\n📸 *Instagram:* ${INSTAGRAM_LINK}\n👥 *Telegram guruhimiz:* ${TELEGRAM_GROUP_LINK}\n\n➕ "➕ Yangi avtomobil qo'shish" tugmasi orqali yana avtomobil qo'shishingiz mumkin.\n📌 Bot versiyasi: ${BOT_VERSION}`, { parse_mode: 'Markdown' });
+            await bot.sendMessage(chatId, `✅ *Siz muvaffaqiyatli ro'yxatdan o'tdingiz, ${userFullName || 'hurmatli mijoz'}!*\n\n👤 Ism: ${userFullName || 'Kiritilmagan'}\n🚗 Avtomobil: ${carNumber}\n📞 Telefon: ${session.data.phone}\n\n🎁 *Bonus tizimi:* Har 5 diagnostikada 1 ta BEPUL!\n📹 *Video galereya:* Ishlarimizni videoda kuzating!\n📸 *Instagram:* ${INSTAGRAM_LINK}\n👥 *Telegram guruhimiz:* ${TELEGRAM_GROUP_LINK}\n\n📌 Bot versiyasi: ${BOT_VERSION}`, { parse_mode: 'Markdown' });
             await sendMainMenu(chatId, false, getUserDevice(userId));
             
             for (const adminId of ADMIN_IDS) {
@@ -1409,12 +1404,7 @@ bot.on('message', async (msg) => {
         });
         
         if (result.success) {
-            try {
-                await sendReminder(chatId);
-                await bot.sendMessage(chatId, `✅ *Yangi avtomobil qo'shildi!*\n\n🚗 ${carNumber}\n📊 Jami avtomobillar: ${result.carsCount}/${MAX_CARS_PER_USER}\n\n🎁 Har bir avtomobil uchun bonus tizimi alohida hisoblanadi!`, { parse_mode: 'Markdown' });
-            } catch (error) {
-                console.error('Avtomobil qo\'shish xatolik:', error);
-            }
+            await bot.sendMessage(chatId, `✅ *Yangi avtomobil qo'shildi!*\n\n🚗 ${carNumber}\n📊 Jami avtomobillar: ${result.carsCount}/${MAX_CARS_PER_USER}`, { parse_mode: 'Markdown' });
         } else {
             await bot.sendMessage(chatId, `❌ ${result.message}`, { parse_mode: 'Markdown' });
         }
@@ -1425,6 +1415,12 @@ bot.on('message', async (msg) => {
     }
     
     if (session.step === 'admin_add_diagnostic') {
+        if (!isAdmin(userId)) {
+            clearUserSession(userId);
+            await sendMainMenu(chatId, false, getUserDevice(userId));
+            return;
+        }
+        
         const carNumber = text.toUpperCase().trim();
         
         let foundUser = null;
@@ -1453,6 +1449,11 @@ bot.on('message', async (msg) => {
     }
     
     if (session.step === 'admin_work_description') {
+        if (!isAdmin(userId)) {
+            clearUserSession(userId);
+            await sendMainMenu(chatId, false, getUserDevice(userId));
+            return;
+        }
         session.data.workDescription = text;
         session.step = 'admin_additional_notes';
         await bot.sendMessage(chatId, `✅ Bajarilgan ishlar qabul qilindi:\n\n📝 "${text}"\n\n➕ *Qo'shimcha eslatmalar kiriting* (ixtiyoriy):\n\n"❌ Bekor qilish" - bekor qilish uchun`, { parse_mode: 'Markdown' });
@@ -1460,6 +1461,11 @@ bot.on('message', async (msg) => {
     }
     
     if (session.step === 'admin_additional_notes') {
+        if (!isAdmin(userId)) {
+            clearUserSession(userId);
+            await sendMainMenu(chatId, false, getUserDevice(userId));
+            return;
+        }
         session.data.additionalNotes = text === '❌ Bekor qilish' ? '' : text;
         
         const result = addDiagnosticToCar(
@@ -1487,13 +1493,6 @@ bot.on('message', async (msg) => {
         adminResponse += `🎁 Bonus: ${result.newBonusCount}/5\n`;
         adminResponse += `🎉 Bepul: ${result.newFreeDiagnostics} ta\n`;
         
-        const remainingForNext = 5 - result.newBonusCount;
-        if (result.newFreeDiagnostics > 0) {
-            adminResponse += `✅ Foydalanuvchida ${result.newFreeDiagnostics} ta BEPUL diagnostika bor!\n`;
-        } else if (remainingForNext > 0) {
-            adminResponse += `📌 Keyingi BEPUL: ${remainingForNext} ta diagnostikadan keyin\n`;
-        }
-        
         await bot.sendMessage(chatId, adminResponse, { parse_mode: 'Markdown' });
         
         let userMsg = `🔧 *DIAGNOSTIKA NATIJALARI*\n\n`;
@@ -1514,7 +1513,6 @@ bot.on('message', async (msg) => {
         const remainingForNextFree = 5 - result.newBonusCount;
         if (result.newFreeDiagnostics > 0) {
             userMsg += `✅ *Sizda ${result.newFreeDiagnostics} ta BEPUL diagnostika bor!*\n`;
-            userMsg += `💡 Keyingi diagnostikangiz BEPUL bo'lishi mumkin!\n`;
         } else if (remainingForNextFree > 0 && remainingForNextFree < 5) {
             userMsg += `📌 *Keyingi BEPUL:* ${remainingForNextFree} ta diagnostikadan keyin\n`;
         } else if (remainingForNextFree === 0 && result.newBonusCount === 5) {
@@ -1552,7 +1550,6 @@ bot.on('message', async (msg) => {
         
         if (text === '📊 Mening sahifam') {
             const carsList = user.cars.map(c => `🚗 ${c.carNumber} (${c.totalDiagnostics} ta diagnostika)`).join('\n');
-            await sendReminder(chatId);
             await bot.sendMessage(chatId, `📊 *MENGING SAHIFAM*\n\n👤 *Ism:* ${user.fullName || 'Kiritilmagan'}\n📞 *Telefon:* ${user.phone}\n🚗 *Avtomobillar:* ${user.cars.length}/${MAX_CARS_PER_USER}\n\n${carsList}\n\n🎁 *Umumiy bonuslar:* ${user.totalBonusCount || 0}\n🎉 *Bepul diagnostika:* ${user.totalFreeDiagnostics || 0} ta\n📊 *Jami diagnostika:* ${user.totalDiagnosticsAll || 0} ta\n📌 *Versiya:* ${BOT_VERSION}`, { parse_mode: 'Markdown' });
         }
         else if (text === '🚗 Mening avtomobillarim') {
@@ -1578,7 +1575,6 @@ bot.on('message', async (msg) => {
                 
                 carsText += `━━━━━━━━━━━━━━━━━━\n`;
             }
-            await sendReminder(chatId);
             await bot.sendMessage(chatId, carsText, { parse_mode: 'Markdown' });
         }
         else if (text === '➕ Yangi avtomobil qo\'shish') {
@@ -1627,7 +1623,6 @@ bot.on('message', async (msg) => {
             bonusText += `• Bepul diagnostika cheksiz muddatga amal qiladi\n`;
             bonusText += `• Admin diagnostika qo'shganda avtomatik hisoblanadi`;
             
-            await sendReminder(chatId);
             await bot.sendMessage(chatId, bonusText, { parse_mode: 'Markdown' });
         }
         else if (text === '📋 Diagnostika tarixim') {
@@ -1637,7 +1632,6 @@ bot.on('message', async (msg) => {
                 return;
             }
             
-            await sendReminder(chatId);
             for (const d of diags) {
                 let diagText = `📅 *${new Date(d.date).toLocaleDateString()}*\n`;
                 diagText += `🕐 ${new Date(d.date).toLocaleTimeString()}\n`;
@@ -1674,7 +1668,6 @@ bot.on('message', async (msg) => {
             });
         }
         else if (text === 'ℹ️ Ma\'lumot') {
-            await sendReminder(chatId);
             await bot.sendMessage(chatId, `ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 Bitta telefon bilan ${MAX_CARS_PER_USER} tagacha avtomobil\n📞 Aloqa: ${ADMIN_PHONE}\n📌 Bot versiyasi: ${BOT_VERSION}\n🔗 Bot linki: ${NEW_BOT_LINK}\n📸 Instagram: ${INSTAGRAM_LINK}\n👥 Telegram guruhimiz: ${TELEGRAM_GROUP_LINK}`, { parse_mode: 'Markdown' });
         }
         else if (text === '❌ Asosiy menyu') {
@@ -1682,7 +1675,7 @@ bot.on('message', async (msg) => {
             await sendMainMenu(chatId, isAdmin(userId), deviceType);
         }
         else if (!session.step) {
-            await bot.sendMessage(chatId, `❌ *Tushunarsiz buyruq!* Menyudan foydalaning.\n\n/start - Bosh sahifa\n/profile - Mening sahifam\n/my_cars - Mening avtomobillarim\n/my_bonus - Mening bonuslarim\n/history - Diagnostika tarixi\n/info - Ma'lumot\n📌 Versiya: ${BOT_VERSION}`, { parse_mode: 'Markdown' });
+            await bot.sendMessage(chatId, `❌ *Tushunarsiz buyruq!* Menyudan foydalaning.\n\n/start - Bosh sahifa\n/profile - Mening sahifam\n/my_cars - Mening avtomobillarim\n/my_bonus - Mening bonuslarim\n/history - Diagnostika tarixi\n/info - Ma'lumot`, { parse_mode: 'Markdown' });
         }
     }
 });
@@ -1702,76 +1695,9 @@ bot.on('callback_query', async (query) => {
         return;
     }
     
-    // Video galereya callback'lari
-    if (data === 'user_video_gallery') {
-        await showVideoGallery(chatId);
-    }
-    else if (data === 'admin_video_gallery') {
-        if (!isAdmin(userId)) return;
-        await showVideoGallery(chatId);
-    }
-    else if (data === 'admin_upload_video') {
-        if (!isAdmin(userId)) return;
-        const session = getUserSession(userId);
-        session.step = 'admin_waiting_video';
-        session.data = {};
-        await bot.sendMessage(chatId, '📤 *VIDEO YUKLASH*\n\nIltimos, video faylni yuboring:\n\n📹 MP4 formatida, 50MB gacha', { parse_mode: 'Markdown' });
-    }
-    else if (data.startsWith('watch_video_')) {
-        const videoId = parseInt(data.split('_')[2]);
-        const video = videoList.find(v => v.id === videoId);
-        
-        if (!video || !video.isActive) {
-            await bot.sendMessage(chatId, '❌ *Video topilmadi yoki o\'chirilgan!*', { parse_mode: 'Markdown' });
-            return;
-        }
-        
-        updateVideoViews(videoId);
-        
-        const videoText = `📹 *${video.title}*\n\n📝 ${video.description || 'Tavsif mavjud emas'}\n\n👁️ Ko\'rishlar: ${video.views || 0}\n👍 Layklar: ${video.likes || 0}\n📅 Yuklangan: ${new Date(video.uploadDate).toLocaleDateString()}`;
-        
-        const keyboard = {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: '👍 Like', callback_data: `like_video_${videoId}` }],
-                    [{ text: '📹 Boshqa videolar', callback_data: 'user_video_gallery' }],
-                    [{ text: '🔙 Asosiy menyu', callback_data: 'back_to_main' }]
-                ]
-            }
-        };
-        
-        try {
-            await bot.sendVideo(chatId, video.fileId, {
-                caption: videoText,
-                parse_mode: 'Markdown',
-                ...keyboard
-            });
-        } catch (err) {
-            await bot.sendMessage(chatId, `❌ *Video yuborishda xatolik!*\n\nVideo ID: ${videoId}`, { parse_mode: 'Markdown' });
-        }
-    }
-    else if (data.startsWith('like_video_')) {
-        const videoId = parseInt(data.split('_')[2]);
-        const result = updateVideoLikes(videoId, userId);
-        
-        if (result) {
-            await bot.answerCallbackQuery(query.id, { text: '👍 Video layklandi!', show_alert: false });
-        } else {
-            await bot.answerCallbackQuery(query.id, { text: '❌ Siz allaqachon layk bosgansiz!', show_alert: true });
-        }
-    }
-    else if (data.startsWith('video_page_')) {
-        const page = parseInt(data.split('_')[2]);
-        await showVideoGallery(chatId, page);
-    }
-    else if (data === 'back_to_main') {
-        await sendMainMenu(chatId, isAdmin(userId), getUserDevice(userId));
-    }
-    
     // FOYDALANUVCHI CALLBACK'LARI
-    else if (data === 'user_profile') {
+    if (data === 'user_profile') {
         const carsList = user.cars.map(c => `🚗 ${c.carNumber} (${c.totalDiagnostics} ta diagnostika)`).join('\n');
-        await sendReminder(chatId);
         await bot.sendMessage(chatId, `📊 *MENGING SAHIFAM*\n\n👤 *Ism:* ${user.fullName || 'Kiritilmagan'}\n📞 *Telefon:* ${user.phone}\n🚗 *Avtomobillar:* ${user.cars.length}/${MAX_CARS_PER_USER}\n\n${carsList}\n\n🎁 *Umumiy bonuslar:* ${user.totalBonusCount || 0}\n🎉 *Bepul diagnostika:* ${user.totalFreeDiagnostics || 0} ta\n📊 *Jami diagnostika:* ${user.totalDiagnosticsAll || 0} ta\n📌 *Versiya:* ${BOT_VERSION}`, { parse_mode: 'Markdown' });
     }
     else if (data === 'user_my_cars') {
@@ -1797,7 +1723,6 @@ bot.on('callback_query', async (query) => {
             
             carsText += `━━━━━━━━━━━━━━━━━━\n`;
         }
-        await sendReminder(chatId);
         await bot.sendMessage(chatId, carsText, { parse_mode: 'Markdown' });
     }
     else if (data === 'user_my_bonus') {
@@ -1827,7 +1752,6 @@ bot.on('callback_query', async (query) => {
         bonusText += `• Bepul diagnostika cheksiz muddatga amal qiladi\n`;
         bonusText += `• Admin diagnostika qo'shganda avtomatik hisoblanadi`;
         
-        await sendReminder(chatId);
         await bot.sendMessage(chatId, bonusText, { parse_mode: 'Markdown' });
     }
     else if (data === 'user_add_car') {
@@ -1846,7 +1770,7 @@ bot.on('callback_query', async (query) => {
         
         await bot.sendMessage(chatId, `🚗 *Yangi avtomobil raqamini kiriting:*\n\nMasalan: 01A777AA\n\n⚠️ Siz maksimum ${MAX_CARS_PER_USER} tagacha avtomobil qo'sha olasiz.\n📊 Hozirgi avtomobillar soni: ${user.cars.length}/${MAX_CARS_PER_USER}`, {
             parse_mode: 'Markdown',
-            ...removeKeyboard()
+            reply_markup: { remove_keyboard: true }
         });
     }
     else if (data === 'user_history') {
@@ -1856,7 +1780,6 @@ bot.on('callback_query', async (query) => {
             return;
         }
         
-        await sendReminder(chatId);
         for (const d of diags) {
             let diagText = `📅 *${new Date(d.date).toLocaleDateString()}*\n`;
             diagText += `🕐 ${new Date(d.date).toLocaleTimeString()}\n`;
@@ -1872,6 +1795,9 @@ bot.on('callback_query', async (query) => {
             
             await bot.sendMessage(chatId, diagText, { parse_mode: 'Markdown' });
         }
+    }
+    else if (data === 'user_video_gallery') {
+        await showVideoGallery(chatId);
     }
     else if (data === 'user_instagram') {
         await bot.sendMessage(chatId, `📸 *BIZNING INSTAGRAM*\n\n🔗 ${INSTAGRAM_LINK}`, {
@@ -1890,18 +1816,23 @@ bot.on('callback_query', async (query) => {
         });
     }
     else if (data === 'user_info') {
-        await sendReminder(chatId);
         await bot.sendMessage(chatId, `ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 Bitta telefon bilan ${MAX_CARS_PER_USER} tagacha avtomobil\n📞 Aloqa: ${ADMIN_PHONE}\n📌 Bot versiyasi: ${BOT_VERSION}\n🔗 Bot linki: ${NEW_BOT_LINK}\n📸 Instagram: ${INSTAGRAM_LINK}\n👥 Telegram guruhimiz: ${TELEGRAM_GROUP_LINK}`, { parse_mode: 'Markdown' });
     }
     
-    // ADMIN CALLBACK'LARI (qisqacha)
+    // ADMIN CALLBACK'LARI
     else if (data === 'admin_statistics') {
-        if (!isAdmin(userId)) return;
+        if (!isAdmin(userId)) {
+            await bot.sendMessage(chatId, '❌ Bu amal uchun ruxsat yo\'q!', { parse_mode: 'Markdown' });
+            return;
+        }
         const stats = getStatistics();
         await bot.sendMessage(chatId, `📊 *STATISTIKA*\n\n👥 Faol foydalanuvchilar: ${stats.totalUsers}\n🚫 Bloklanganlar: ${stats.blockedUsers}\n🚗 Avtomobillar: ${stats.totalCars}\n🔧 Jami: ${stats.totalDiagnostics}\n💰 To'lovli: ${stats.paidDiagnostics}\n🎉 Bepul: ${stats.freeDiagnostics}\n💵 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n⚠️ Xatoliklar: ${stats.totalErrors}\n📹 Videolar: ${stats.totalVideos} ta\n👁️ Video ko\'rishlar: ${stats.totalVideoViews} ta\n📌 Versiya: ${stats.currentVersion}\n🔄 Yangilanish rejimi: ${stats.isUpdateMode ? 'Faol' : 'O\'chirilgan'}`, { parse_mode: 'Markdown' });
     }
     else if (data === 'admin_users') {
-        if (!isAdmin(userId)) return;
+        if (!isAdmin(userId)) {
+            await bot.sendMessage(chatId, '❌ Bu amal uchun ruxsat yo\'q!', { parse_mode: 'Markdown' });
+            return;
+        }
         const usersList = getAllUsersWithDetails();
         if (usersList.length === 0) {
             await bot.sendMessage(chatId, '📭 Hech qanday foydalanuvchi yo\'q', { parse_mode: 'Markdown' });
@@ -1919,13 +1850,19 @@ bot.on('callback_query', async (query) => {
         await bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
     }
     else if (data === 'admin_add_diagnostic') {
-        if (!isAdmin(userId)) return;
+        if (!isAdmin(userId)) {
+            await bot.sendMessage(chatId, '❌ Bu amal uchun ruxsat yo\'q!', { parse_mode: 'Markdown' });
+            return;
+        }
         const session = getUserSession(userId);
         session.step = 'admin_add_diagnostic';
-        await bot.sendMessage(chatId, '🔧 *Diagnostika qo\'shish*\n\n🚗 Avtomobil raqamini kiriting:', { parse_mode: 'Markdown', ...removeKeyboard() });
+        await bot.sendMessage(chatId, '🔧 *Diagnostika qo\'shish*\n\n🚗 Avtomobil raqamini kiriting:', { parse_mode: 'Markdown', reply_markup: { remove_keyboard: true } });
     }
     else if (data === 'admin_near_bonus') {
-        if (!isAdmin(userId)) return;
+        if (!isAdmin(userId)) {
+            await bot.sendMessage(chatId, '❌ Bu amal uchun ruxsat yo\'q!', { parse_mode: 'Markdown' });
+            return;
+        }
         const nearBonus = getNearBonusCars();
         if (nearBonus.length === 0) {
             await bot.sendMessage(chatId, '📭 Bonusga yaqin avtomobillar yo\'q', { parse_mode: 'Markdown' });
@@ -1938,7 +1875,10 @@ bot.on('callback_query', async (query) => {
         await bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
     }
     else if (data === 'admin_errors') {
-        if (!isAdmin(userId)) return;
+        if (!isAdmin(userId)) {
+            await bot.sendMessage(chatId, '❌ Bu amal uchun ruxsat yo\'q!', { parse_mode: 'Markdown' });
+            return;
+        }
         const errorsList = getErrors();
         if (errorsList.length === 0) {
             await bot.sendMessage(chatId, '✅ Xatoliklar yo\'q', { parse_mode: 'Markdown' });
@@ -1951,7 +1891,10 @@ bot.on('callback_query', async (query) => {
         await bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
     }
     else if (data === 'admin_diagnostics_history') {
-        if (!isAdmin(userId)) return;
+        if (!isAdmin(userId)) {
+            await bot.sendMessage(chatId, '❌ Bu amal uchun ruxsat yo\'q!', { parse_mode: 'Markdown' });
+            return;
+        }
         const diags = getAllDiagnostics(20);
         if (diags.length === 0) {
             await bot.sendMessage(chatId, '📭 Diagnostikalar yo\'q', { parse_mode: 'Markdown' });
@@ -1962,7 +1905,10 @@ bot.on('callback_query', async (query) => {
         }
     }
     else if (data === 'admin_today_diagnostics') {
-        if (!isAdmin(userId)) return;
+        if (!isAdmin(userId)) {
+            await bot.sendMessage(chatId, '❌ Bu amal uchun ruxsat yo\'q!', { parse_mode: 'Markdown' });
+            return;
+        }
         const diags = getTodayDiagnostics();
         if (diags.length === 0) {
             await bot.sendMessage(chatId, '📭 Bugun diagnostika yo\'q', { parse_mode: 'Markdown' });
@@ -1975,7 +1921,10 @@ bot.on('callback_query', async (query) => {
         await bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
     }
     else if (data === 'admin_get_report') {
-        if (!isAdmin(userId)) return;
+        if (!isAdmin(userId)) {
+            await bot.sendMessage(chatId, '❌ Bu amal uchun ruxsat yo\'q!', { parse_mode: 'Markdown' });
+            return;
+        }
         await bot.sendMessage(chatId, '📄 *Hisobot tayyorlanmoqda...*', { parse_mode: 'Markdown' });
         try {
             const allDiagnostics = getAllDiagnostics(500);
@@ -1986,14 +1935,37 @@ bot.on('callback_query', async (query) => {
             await bot.sendMessage(chatId, '❌ *Xatolik!*', { parse_mode: 'Markdown' });
         }
     }
+    else if (data === 'admin_video_gallery') {
+        if (!isAdmin(userId)) {
+            await bot.sendMessage(chatId, '❌ Bu amal uchun ruxsat yo\'q!', { parse_mode: 'Markdown' });
+            return;
+        }
+        await showVideoGallery(chatId);
+    }
+    else if (data === 'admin_upload_video') {
+        if (!isAdmin(userId)) {
+            await bot.sendMessage(chatId, '❌ Bu amal uchun ruxsat yo\'q!', { parse_mode: 'Markdown' });
+            return;
+        }
+        const session = getUserSession(userId);
+        session.step = 'admin_waiting_video';
+        session.data = {};
+        await bot.sendMessage(chatId, '📤 *VIDEO YUKLASH*\n\nIltimos, video faylni yuboring:\n\n📹 MP4 formatida, 50MB gacha', { parse_mode: 'Markdown' });
+    }
     else if (data === 'admin_create_backup') {
-        if (!isAdmin(userId)) return;
+        if (!isAdmin(userId)) {
+            await bot.sendMessage(chatId, '❌ Bu amal uchun ruxsat yo\'q!', { parse_mode: 'Markdown' });
+            return;
+        }
         await bot.sendMessage(chatId, '💾 *Backup yaratilmoqda...*', { parse_mode: 'Markdown' });
         createBackup();
         await bot.sendMessage(chatId, `✅ *Backup yaratildi!*`, { parse_mode: 'Markdown' });
     }
     else if (data === 'admin_restore_backup') {
-        if (!isAdmin(userId)) return;
+        if (!isAdmin(userId)) {
+            await bot.sendMessage(chatId, '❌ Bu amal uchun ruxsat yo\'q!', { parse_mode: 'Markdown' });
+            return;
+        }
         const backups = listBackups();
         if (backups.length === 0) {
             await bot.sendMessage(chatId, '❌ *Backup topilmadi!*', { parse_mode: 'Markdown' });
@@ -2005,7 +1977,10 @@ bot.on('callback_query', async (query) => {
         }
     }
     else if (data === 'admin_manage_users') {
-        if (!isAdmin(userId)) return;
+        if (!isAdmin(userId)) {
+            await bot.sendMessage(chatId, '❌ Bu amal uchun ruxsat yo\'q!', { parse_mode: 'Markdown' });
+            return;
+        }
         const activeUsers = getActiveUsers();
         const blockedUsers = getBlockedUsers();
         const allUsers = [...activeUsers, ...blockedUsers];
@@ -2026,7 +2001,10 @@ bot.on('callback_query', async (query) => {
         await bot.sendMessage(chatId, msg, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: keyboard } });
     }
     else if (data === 'admin_security') {
-        if (!isAdmin(userId)) return;
+        if (!isAdmin(userId)) {
+            await bot.sendMessage(chatId, '❌ Bu amal uchun ruxsat yo\'q!', { parse_mode: 'Markdown' });
+            return;
+        }
         if (!isSuperAdmin(userId) && !canEditCode(userId)) {
             await bot.sendMessage(chatId, '❌ *Sizda bu amalni bajarish uchun ruxsat yo\'q!*', { parse_mode: 'Markdown' });
             return;
@@ -2046,7 +2024,10 @@ bot.on('callback_query', async (query) => {
         });
     }
     else if (data === 'admin_update_mode') {
-        if (!isAdmin(userId)) return;
+        if (!isAdmin(userId)) {
+            await bot.sendMessage(chatId, '❌ Bu amal uchun ruxsat yo\'q!', { parse_mode: 'Markdown' });
+            return;
+        }
         await bot.sendMessage(chatId, `⚠️ *YANGI VERSIYAGA O'TISH*\n\nDavom etasizmi?`, {
             parse_mode: 'Markdown',
             reply_markup: {
@@ -2058,214 +2039,5 @@ bot.on('callback_query', async (query) => {
         });
     }
     else if (data === 'admin_disable_update') {
-        if (!isAdmin(userId)) return;
-        disableUpdateMode();
-        await bot.sendMessage(chatId, `✅ *Yangilanish rejimi o'chirildi!*`, { parse_mode: 'Markdown' });
-        await sendMainMenu(chatId, true, getUserDevice(userId));
-    }
-    
-    // SECURITY CALLBACK'LARI
-    else if (data === 'security_allowed_admins') {
-        let msg = '👥 *RUXSAT BERILGAN ADMINLAR*\n━━━━━━━━━━━━━━━━━━\n\n';
-        if (adminSettings.allowedEditors.length === 0) {
-            msg += 'Hech qanday admin ruxsatga ega emas.\nFaqat Super Admin kodni o\'zgartirishi mumkin.';
-        } else {
-            adminSettings.allowedEditors.forEach((adminId, index) => {
-                const admin = getUserByUserId(adminId);
-                msg += `${index + 1}. ID: ${adminId}\n`;
-                if (admin) {
-                    msg += `👤 ${admin.fullName || admin.phone}\n`;
-                }
-                msg += `━━━━━━━━━━━━━━━━━━\n`;
-            });
-        }
-        await bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
-    }
-    else if (data === 'security_add_admin') {
-        await bot.sendMessage(chatId, '➕ *ADMIN QO\'SHISH*\n\nRuxsat bermoqchi bo\'lgan adminning Telegram ID sini yuboring.\n\n⚠️ Faqat Super Admin bu amalni bajarishi mumkin!\n\n❌ Bekor qilish uchun /cancel yozing.', { parse_mode: 'Markdown' });
-        const session = getUserSession(userId);
-        session.step = 'add_admin_permission';
-    }
-    else if (data === 'security_remove_admin') {
-        if (adminSettings.allowedEditors.length === 0) {
-            await bot.sendMessage(chatId, '❌ *Hech qanday admin ruxsatga ega emas!*', { parse_mode: 'Markdown' });
-            return;
-        }
-        let msg = '➖ *ADMIN O\'CHIRISH*\n\nRuxsatni olib qo\'yish uchun adminni tanlang:\n\n';
-        const keyboard = [];
-        adminSettings.allowedEditors.forEach(adminId => {
-            const admin = getUserByUserId(adminId);
-            const name = admin ? admin.fullName || admin.phone : `ID: ${adminId}`;
-            keyboard.push([{ text: `❌ ${name}`, callback_data: `remove_admin_${adminId}` }]);
-        });
-        keyboard.push([{ text: '🔙 Orqaga', callback_data: 'security_back' }]);
-        await bot.sendMessage(chatId, msg, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: keyboard } });
-    }
-    else if (data === 'security_log') {
-        let msg = '📜 *XAVFSIZLIK JURNALI*\n━━━━━━━━━━━━━━━━━━\n\n';
-        if (adminSettings.securityLog.length === 0) {
-            msg += 'Hech qanday xavfsizlik hodisasi qayd etilmagan.';
-        } else {
-            adminSettings.securityLog.slice(0, 20).forEach(log => {
-                msg += `📅 ${new Date(log.date).toLocaleString()}\n`;
-                msg += `🔹 ${log.action}\n`;
-                msg += `👤 Admin ID: ${log.userId}\n`;
-                msg += `📝 ${log.details}\n`;
-                msg += `━━━━━━━━━━━━━━━━━━\n`;
-            });
-        }
-        await bot.sendMessage(chatId, msg, { parse_mode: 'Markdown' });
-    }
-    else if (data === 'security_back') {
-        await sendMainMenu(chatId, true, getUserDevice(userId));
-    }
-    else if (data.startsWith('remove_admin_')) {
-        const targetAdminId = parseInt(data.split('_')[2]);
-        const result = revokeEditPermission(userId, targetAdminId);
-        await bot.sendMessage(chatId, result.message, { parse_mode: 'Markdown' });
-        await sendMainMenu(chatId, true, getUserDevice(userId));
-    }
-    else if (data.startsWith('restore_')) {
-        const backupName = data.replace('restore_', '');
-        await bot.sendMessage(chatId, '🔄 *Database tiklanmoqda...*', { parse_mode: 'Markdown' });
-        if (restoreBackup(backupName)) {
-            loadData();
-            loadVideos();
-            await bot.sendMessage(chatId, `✅ *Database muvaffaqiyatli tiklandi!*`, { parse_mode: 'Markdown' });
-        } else {
-            await bot.sendMessage(chatId, '❌ *Database tiklashda xatolik!*', { parse_mode: 'Markdown' });
-        }
-        await sendMainMenu(chatId, true, getUserDevice(userId));
-    }
-    else if (data === 'restore_cancel') {
-        await bot.sendMessage(chatId, '❌ *Database tiklash bekor qilindi.*', { parse_mode: 'Markdown' });
-        await sendMainMenu(chatId, true, getUserDevice(userId));
-    }
-    else if (data === 'confirm_update') {
-        if (!isAdmin(userId)) return;
-        const result = await notifyAllUsersAboutUpdate();
-        enableUpdateMode();
-        await bot.sendMessage(chatId, `✅ *YANGILANISH TUGALLANDI!*\n\n✅ Yuborildi: ${result.success} ta\n❌ Yuborilmadi: ${result.fail} ta`, { parse_mode: 'Markdown' });
-        await sendMainMenu(chatId, true, getUserDevice(userId));
-    }
-    else if (data === 'cancel_update') {
-        await bot.sendMessage(chatId, '❌ *Yangilanish bekor qilindi.*', { parse_mode: 'Markdown' });
-        await sendMainMenu(chatId, true, getUserDevice(userId));
-    }
-    else if (data === 'user_manage_cancel') {
-        await sendMainMenu(chatId, true, getUserDevice(userId));
-    }
-    else if (data.startsWith('manage_user_')) {
-        const targetUserId = parseInt(data.split('_')[2]);
-        const targetUser = getUserByUserId(targetUserId);
-        if (!targetUser) {
-            await bot.sendMessage(chatId, '❌ Foydalanuvchi topilmadi!', { parse_mode: 'Markdown' });
-            return;
-        }
-        
-        const userInfo = `👤 *${targetUser.fullName || 'Ismsiz foydalanuvchi'}*\n\n📞 Telefon: ${targetUser.phone}\n🚗 Avtomobillar: ${targetUser.cars.length} ta\n📊 Diagnostika: ${targetUser.totalDiagnosticsAll || 0} ta\n🎁 Bonus: ${targetUser.totalBonusCount || 0}\n🎉 Bepul: ${targetUser.totalFreeDiagnostics || 0}\n📅 Ro'yxatdan: ${new Date(targetUser.registeredDate).toLocaleDateString()}\n🚦 Holat: ${targetUser.isBlocked ? '🔴 BLOKLANGAN' : '🟢 FAOL'}`;
-        
-        const keyboard = [];
-        if (targetUser.isBlocked) {
-            keyboard.push([{ text: '✅ Blokdan ochish', callback_data: `unblock_user_${targetUserId}` }]);
-        } else {
-            keyboard.push([{ text: '🚫 Bloklash', callback_data: `block_user_${targetUserId}` }]);
-        }
-        keyboard.push([{ text: '🗑️ O\'chirish', callback_data: `delete_user_${targetUserId}` }]);
-        keyboard.push([{ text: '🔙 Orqaga', callback_data: 'admin_manage_users' }]);
-        
-        await bot.sendMessage(chatId, userInfo, {
-            parse_mode: 'Markdown',
-            reply_markup: { inline_keyboard: keyboard }
-        });
-    }
-    else if (data.startsWith('block_user_')) {
-        const targetUserId = parseInt(data.split('_')[2]);
-        const result = blockUser(targetUserId);
-        await bot.sendMessage(chatId, result.message, { parse_mode: 'Markdown' });
-        await sendMainMenu(chatId, true, getUserDevice(userId));
-    }
-    else if (data.startsWith('unblock_user_')) {
-        const targetUserId = parseInt(data.split('_')[2]);
-        const result = unblockUser(targetUserId);
-        await bot.sendMessage(chatId, result.message, { parse_mode: 'Markdown' });
-        await sendMainMenu(chatId, true, getUserDevice(userId));
-    }
-    else if (data.startsWith('delete_user_')) {
-        const targetUserId = parseInt(data.split('_')[2]);
-        const confirmKeyboard = {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: '✅ Ha, o\'chirish', callback_data: `confirm_delete_${targetUserId}` }],
-                    [{ text: '❌ Yo\'q, bekor qilish', callback_data: 'admin_manage_users' }]
-                ]
-            }
-        };
-        await bot.sendMessage(chatId, '⚠️ *DIQQAT!*\n\nFoydalanuvchini butunlay o\'chirmoqchisiz!\n\nBu amalni ortga qaytarib bo\'lmaydi.\n\nHaqiqatan ham o\'chirishni xohlaysizmi?', {
-            parse_mode: 'Markdown',
-            ...confirmKeyboard
-        });
-    }
-    else if (data.startsWith('confirm_delete_')) {
-        const targetUserId = parseInt(data.split('_')[2]);
-        const result = deleteUser(targetUserId);
-        await bot.sendMessage(chatId, result.message, { parse_mode: 'Markdown' });
-        await sendMainMenu(chatId, true, getUserDevice(userId));
-    }
-});
-
-// -------------------- SESSION ADMIN QO'SHISH --------------------
-bot.on('message', async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
-    const text = msg.text;
-    
-    const session = getUserSession(userId);
-    
-    if (session.step === 'add_admin_permission') {
-        if (text === '/cancel') {
-            clearUserSession(userId);
-            await bot.sendMessage(chatId, '❌ *Amal bekor qilindi.*', { parse_mode: 'Markdown' });
-            await sendMainMenu(chatId, true, getUserDevice(userId));
-            return;
-        }
-        
-        const targetAdminId = parseInt(text);
-        if (isNaN(targetAdminId)) {
-            await bot.sendMessage(chatId, '❌ *Noto\'g\'ri ID!* Iltimos, to\'g\'ri Telegram ID yuboring yoki /cancel yozing.', { parse_mode: 'Markdown' });
-            return;
-        }
-        
-        const result = grantEditPermission(userId, targetAdminId);
-        await bot.sendMessage(chatId, result.message, { parse_mode: 'Markdown' });
-        
-        clearUserSession(userId);
-        await sendMainMenu(chatId, true, getUserDevice(userId));
-    }
-});
-
-// -------------------- XATOLIKLARNI QAYTA ISHLASH --------------------
-bot.on('polling_error', (error) => console.error('Polling xatolik:', error));
-process.on('uncaughtException', (error) => console.error('Uncaught exception:', error));
-
-// -------------------- BOTNI ISHGA TUSHIRISH --------------------
-console.log('='.repeat(60));
-console.log('🚗 ISUZU DOCTOR BOT ISHGA TUSHMOQDA');
-console.log('='.repeat(60));
-
-loadVersion();
-loadData();
-loadAdminSettings();
-loadVideos();
-
-console.log('='.repeat(60));
-console.log('🚗 ISUZU DOCTOR BOT ISHGA TUSHDI');
-console.log('='.repeat(60));
-console.log(`📌 Versiya: ${BOT_VERSION}`);
-console.log(`👑 Adminlar: ${ADMIN_IDS.join(', ')}`);
-console.log(`👥 Foydalanuvchilar: ${users.filter(u => !u.isAdmin).length}`);
-console.log(`🔧 Diagnostikalar: ${diagnostics.length}`);
-console.log(`📹 Videolar: ${videoList.length} ta`);
-console.log(`💾 Volume manzili: ${VOLUME_PATH}`);
-console.log('='.repeat(60));
-console.log('✅ Bot ishlashga tayyor!');
+        if (!isAdmin(userId)) {
+            await bot.sendMessage(chatId, '❌ Bu amal uchun r
