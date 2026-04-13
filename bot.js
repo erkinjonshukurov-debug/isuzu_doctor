@@ -8,6 +8,71 @@ const NEW_BOT_LINK = "https://t.me/Isuzu_doctor_bot";
 const INSTAGRAM_LINK = "https://www.instagram.com/isuzu.samarkand";
 const TELEGRAM_GROUP_LINK = "https://t.me/+piY0W4XrGqFkN2Iy";
 
+// -------------------- TO'LOV MA'LUMOTLARI --------------------
+const CARD_NUMBER = "9860040115220143";
+const CARD_OWNER = "Erkinjon Shukurov";
+const BANK_NAME = "Xalq Bank";
+
+// To'lov linklarini yaratish funksiyalari
+function getPaymentLinks(amount = 0) {
+    return {
+        clickUrl: `https://my.click.uz/services/pay?service_id=1&merchant_id=1&amount=${amount}&card=${CARD_NUMBER}`,
+        paymeUrl: `https://payme.uz?card=${CARD_NUMBER}&amount=${amount}`,
+        apelsinUrl: `https://apelsin.uz/pay?card=${CARD_NUMBER}&amount=${amount}`
+    };
+}
+
+// Foydalanuvchi uchun to'lov tugmalari
+function getUserPaymentKeyboard() {
+    const links = getPaymentLinks();
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: "💳 Click orqali to'lash", url: links.clickUrl }],
+                [{ text: "💳 Payme orqali to'lash", url: links.paymeUrl }],
+                [{ text: "🍊 Apelsin orqali to'lash", url: links.apelsinUrl }],
+                [{ text: "🏦 Karta raqamini ko'rish", callback_data: "show_card_number" }],
+                [{ text: "🔙 Ortga", callback_data: "back_to_main" }]
+            ]
+        }
+    };
+}
+
+// Admin uchun ish haqi to'lash tugmalari
+function getAdminSalaryKeyboard() {
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: "💵 1,000,000 so'm", callback_data: "salary_1000000" }],
+                [{ text: "💵 2,000,000 so'm", callback_data: "salary_2000000" }],
+                [{ text: "💵 3,000,000 so'm", callback_data: "salary_3000000" }],
+                [{ text: "💵 5,000,000 so'm", callback_data: "salary_5000000" }],
+                [{ text: "✏️ Boshqa summa", callback_data: "salary_custom" }],
+                [{ text: "📜 To'lov tarixi", callback_data: "salary_history" }],
+                [{ text: "🔙 Ortga", callback_data: "back_to_main" }]
+            ]
+        }
+    };
+}
+
+// Karta ma'lumotlarini ko'rsatish
+function getCardInfoMessage() {
+    return `
+🏦 *KARTA MA'LUMOTLARI*
+
+💳 *Karta raqami:* \`${CARD_NUMBER}\`
+👤 *Karta egasi:* ${CARD_OWNER}
+🏛 *Bank:* ${BANK_NAME}
+
+📌 *To'lov qilish uchun:*
+1. Karta raqamini nusxalang
+2. Click, Payme yoki Apelsin orqali to'lov qiling
+3. To'lov chekini saqlang
+
+✅ To'lov amalga oshirilgandan so'ng, administrator bilan bog'lanishingiz mumkin.
+    `;
+}
+
 // -------------------- XAVFSIZLIK VA ADMIN --------------------
 const BOT_TOKEN = process.env.BOT_TOKEN || '8779251766:AAH12INusgBCawsk5awqIjcyHnNLiq5A33A';
 
@@ -36,6 +101,65 @@ const ERRORS_FILE = path.join(VOLUME_PATH, 'errors.json');
 const VERSION_FILE = path.join(VOLUME_PATH, 'version.json');
 const ADMIN_SETTINGS_FILE = path.join(VOLUME_PATH, 'admin_settings.json');
 const VIDEOS_FILE = path.join(VOLUME_PATH, 'videos.json');
+const SALARY_FILE = path.join(VOLUME_PATH, 'salary.json');
+
+// -------------------- OYLIK MA'LUMOTLARI --------------------
+let salaryRecords = [];
+
+function loadSalaryRecords() {
+    try {
+        if (fs.existsSync(SALARY_FILE)) {
+            salaryRecords = JSON.parse(fs.readFileSync(SALARY_FILE, "utf8"));
+        } else {
+            salaryRecords = [];
+            saveSalaryRecords();
+        }
+        console.log("✅ Oylik ma'lumotlari yuklandi: " + salaryRecords.length + " ta yozuv");
+    } catch (err) {
+        console.error("Oylik ma'lumotlarini yuklashda xatolik:", err);
+        salaryRecords = [];
+    }
+}
+
+function saveSalaryRecords() {
+    fs.writeFileSync(SALARY_FILE, JSON.stringify(salaryRecords, null, 2));
+}
+
+function addSalaryRecord(amount, adminId, note = "") {
+    const record = {
+        id: Date.now(),
+        amount: amount,
+        adminId: adminId,
+        note: note,
+        date: new Date().toISOString(),
+        status: "pending"
+    };
+    salaryRecords.push(record);
+    saveSalaryRecords();
+    addSecurityLog("SALARY_REQUEST", adminId, `Ish haqi so'rovi: ${amount} so'm`);
+    return record;
+}
+
+function updateSalaryStatus(recordId, status) {
+    const record = salaryRecords.find(r => r.id === recordId);
+    if (record) {
+        record.status = status;
+        if (status === "paid") {
+            record.paidDate = new Date().toISOString();
+        }
+        saveSalaryRecords();
+        return true;
+    }
+    return false;
+}
+
+function getSalaryRecords() {
+    return salaryRecords.slice(-50).reverse();
+}
+
+function getTotalSalaryPending() {
+    return salaryRecords.filter(r => r.status === "pending").reduce((sum, r) => sum + r.amount, 0);
+}
 
 // -------------------- VIDEO GALEREYA --------------------
 let videoList = [];
@@ -383,6 +507,9 @@ function createBackup() {
     if (fs.existsSync(VIDEOS_FILE)) {
         fs.copyFileSync(VIDEOS_FILE, path.join(BACKUP_DIR, "videos_backup_" + timestamp + ".json"));
     }
+    if (fs.existsSync(SALARY_FILE)) {
+        fs.copyFileSync(SALARY_FILE, path.join(BACKUP_DIR, "salary_backup_" + timestamp + ".json"));
+    }
     
     const backups = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith(".json"));
     while (backups.length > 30) {
@@ -426,6 +553,14 @@ function restoreBackup(backupName) {
         const videoData = JSON.parse(fs.readFileSync(videoBackupPath, "utf8"));
         fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videoData, null, 2));
         videoList = videoData;
+    }
+    
+    const salaryBackupName = backupName.replace("users_backup_", "salary_backup_");
+    const salaryBackupPath = path.join(BACKUP_DIR, salaryBackupName);
+    if (fs.existsSync(salaryBackupPath)) {
+        const salaryData = JSON.parse(fs.readFileSync(salaryBackupPath, "utf8"));
+        fs.writeFileSync(SALARY_FILE, JSON.stringify(salaryData, null, 2));
+        salaryRecords = salaryData;
     }
     
     console.log("✅ Database tiklandi: " + backupName);
@@ -740,7 +875,8 @@ function getStatistics() {
         currentVersion: currentVersion,
         isUpdateMode: isUpdateMode,
         totalVideos: videoList.length,
-        totalVideoViews: videoList.reduce((sum, v) => sum + (v.views || 0), 0)
+        totalVideoViews: videoList.reduce((sum, v) => sum + (v.views || 0), 0),
+        pendingSalary: getTotalSalaryPending()
     };
 }
 
@@ -809,7 +945,7 @@ async function showVideoGallery(chatId, page = 0) {
     });
 }
 
-// ======================== INLINE KEYBOARD (IXCHAM - 2 TA TUGMA 1 QATORDA) ========================
+// ======================== INLINE KEYBOARD (FOYDALANUVCHI UCHUN) ========================
 function getCompactInlineKeyboard() {
     return {
         reply_markup: {
@@ -817,15 +953,15 @@ function getCompactInlineKeyboard() {
                 [{ text: "📊 Profil", callback_data: "user_profile" }, { text: "🚗 Avtomobillar", callback_data: "user_my_cars" }],
                 [{ text: "🎁 Bonuslar", callback_data: "user_my_bonus" }, { text: "➕ Avto qo'shish", callback_data: "user_add_car" }],
                 [{ text: "📋 Tarix", callback_data: "user_history" }, { text: "📹 Video", callback_data: "user_video_gallery" }],
-                [{ text: "📸 Instagram", callback_data: "user_instagram" }, { text: "👥 Guruh", callback_data: "user_telegram_group" }],
-                [{ text: "ℹ️ Ma'lumot", callback_data: "user_info" }]
+                [{ text: "💳 To'lov", callback_data: "user_payment" }, { text: "📸 Instagram", callback_data: "user_instagram" }],
+                [{ text: "👥 Guruh", callback_data: "user_telegram_group" }, { text: "ℹ️ Ma'lumot", callback_data: "user_info" }]
             ],
             resize_keyboard: true
         }
     };
 }
 
-// ADMIN UCHUN REPLY KEYBOARD (MATNLI TUGMALAR)
+// ADMIN UCHUN REPLY KEYBOARD
 function getAdminReplyKeyboard() {
     const keyboard = [
         ["📊 Statistika", "👥 Foydalanuvchilar"],
@@ -834,7 +970,8 @@ function getAdminReplyKeyboard() {
         ["📅 Bugungi", "📄 Hisobot"],
         ["📹 Video galereya", "📤 Video yuklash"],
         ["💾 Backup", "🔄 Tiklash"],
-        ["🚫 Foyd. boshqarish", "🔐 Xavfsizlik"]
+        ["🚫 Foyd. boshqarish", "🔐 Xavfsizlik"],
+        ["💳 Ish haqini to'lash", "💰 Ish haqi tarixi"]
     ];
     
     if (!isUpdateMode) {
@@ -1115,6 +1252,37 @@ bot.on("message", async (msg) => {
         return;
     }
     
+    // Admin ish haqi summasini kiritish
+    if (session.step === "admin_salary_custom") {
+        if (!isAdmin(userId)) {
+            clearUserSession(userId);
+            await sendMainMenu(chatId, false, getUserDevice(userId));
+            return;
+        }
+        
+        const amount = parseInt(text.replace(/\s/g, ''));
+        if (isNaN(amount) || amount <= 0) {
+            await bot.sendMessage(chatId, "❌ *Noto'g'ri summa!* Iltimos, to'g'ri summani kiriting (faqat raqam):", { parse_mode: "Markdown" });
+            return;
+        }
+        
+        const record = addSalaryRecord(amount, userId);
+        const links = getPaymentLinks(amount);
+        
+        await bot.sendMessage(chatId, `✅ *Ish haqi so'rovi yaratildi!*\n\n💵 Summa: ${amount.toLocaleString()} so'm\n🆔 ID: ${record.id}\n\n🔗 *To'lov linklari:*\n• Click: ${links.clickUrl}\n• Payme: ${links.paymeUrl}\n• Apelsin: ${links.apelsinUrl}\n\n📌 To'lov amalga oshirilgandan so'ng, "✅ To'lov amalga oshirildi" tugmasini bosing.`, {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "✅ To'lov amalga oshirildi", callback_data: `salary_paid_${record.id}` }],
+                    [{ text: "🔙 Ortga", callback_data: "back_to_main" }]
+                ]
+            }
+        });
+        
+        clearUserSession(userId);
+        return;
+    }
+    
     if (photo) return;
     if (!text) return;
     if (text === "/start") return;
@@ -1297,12 +1465,12 @@ bot.on("message", async (msg) => {
         return;
     }
     
-    // ======================== ADMIN MATNLI BUYRUQLAR (REPLY KEYBOARD UCHUN) ========================
+    // ======================== ADMIN MATNLI BUYRUQLAR ========================
     if (isAdmin(userId)) {
         // STATISTIKA
         if (text === "📊 Statistika") {
             const stats = getStatistics();
-            await bot.sendMessage(chatId, "📊 *STATISTIKA*\n\n👥 Faol: " + stats.totalUsers + "\n🚫 Bloklangan: " + stats.blockedUsers + "\n🚗 Avtomobillar: " + stats.totalCars + "\n🔧 Jami: " + stats.totalDiagnostics + "\n💰 Daromad: " + stats.totalIncome.toLocaleString() + " so'm\n📹 Videolar: " + stats.totalVideos + " ta\n📌 Versiya: " + stats.currentVersion, { parse_mode: "Markdown" });
+            await bot.sendMessage(chatId, `📊 *STATISTIKA*\n\n👥 Faol: ${stats.totalUsers}\n🚫 Bloklangan: ${stats.blockedUsers}\n🚗 Avtomobillar: ${stats.totalCars}\n🔧 Jami: ${stats.totalDiagnostics}\n💰 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n📹 Videolar: ${stats.totalVideos} ta\n💳 Kutilayotgan ish haqi: ${stats.pendingSalary.toLocaleString()} so'm\n📌 Versiya: ${stats.currentVersion}`, { parse_mode: "Markdown" });
             await sendMainMenu(chatId, true, deviceType);
         }
         // FOYDALANUVCHILAR
@@ -1317,9 +1485,9 @@ bot.on("message", async (msg) => {
             let msgText = "👥 *FOYDALANUVCHILAR*\n━━━━━━━━━━━━━━━━━━\n\n";
             usersList.slice(0, 15).forEach((u, index) => { 
                 const status = u.isBlocked ? "🔴" : "🟢";
-                msgText += status + " *" + (index + 1) + ". " + (u.fullName || "Ismsiz") + "*\n";
-                msgText += "📞 " + u.phone + "\n";
-                msgText += "🚗 " + u.cars.map(c => c.carNumber).join(", ") + "\n";
+                msgText += `${status} *${index + 1}. ${u.fullName || "Ismsiz"}*\n`;
+                msgText += `📞 ${u.phone}\n`;
+                msgText += `🚗 ${u.cars.map(c => c.carNumber).join(", ")}\n`;
                 msgText += "━━━━━━━━━━━━━━━━━━\n";
             });
             await bot.sendMessage(chatId, msgText, { parse_mode: "Markdown" });
@@ -1339,7 +1507,7 @@ bot.on("message", async (msg) => {
             } else {
                 let msg = "🎁 *BONUSGA YAQINLAR*\n━━━━━━━━━━━━━━━━━━\n\n";
                 nearBonus.forEach(c => {
-                    msg += "👤 " + c.fullName + "\n🚗 " + c.carNumber + "\n🎁 " + c.bonusCount + "/5\n📌 " + c.remaining + " diagnostikadan keyin BEPUL\n━━━━━━━━━━━━━━━━━━\n";
+                    msg += `👤 ${c.fullName}\n🚗 ${c.carNumber}\n🎁 ${c.bonusCount}/5\n📌 ${c.remaining} diagnostikadan keyin BEPUL\n━━━━━━━━━━━━━━━━━━\n`;
                 });
                 await bot.sendMessage(chatId, msg, { parse_mode: "Markdown" });
             }
@@ -1353,7 +1521,7 @@ bot.on("message", async (msg) => {
             } else {
                 let msg = "⚠️ *XATOLIKLAR*\n\n";
                 errorsList.slice(0, 10).forEach(e => {
-                    msg += "🚗 " + e.carNumber + "\n📝 " + (e.errorDescription || "Xatolik") + "\n📅 " + new Date(e.date).toLocaleDateString() + "\n━━━━━━━━━━━━━━━━━━\n";
+                    msg += `🚗 ${e.carNumber}\n📝 ${e.errorDescription || "Xatolik"}\n📅 ${new Date(e.date).toLocaleDateString()}\n━━━━━━━━━━━━━━━━━━\n`;
                 });
                 await bot.sendMessage(chatId, msg, { parse_mode: "Markdown" });
             }
@@ -1366,7 +1534,7 @@ bot.on("message", async (msg) => {
                 await bot.sendMessage(chatId, "📭 Diagnostikalar yo'q", { parse_mode: "Markdown" });
             } else {
                 for (const d of diags.slice(0, 10)) {
-                    await bot.sendMessage(chatId, "📅 " + new Date(d.date).toLocaleDateString() + "\n🚗 " + d.carNumber + "\n💰 " + (d.price > 0 ? d.price.toLocaleString() + " so'm" : "BEPUL"), { parse_mode: "Markdown" });
+                    await bot.sendMessage(chatId, `📅 ${new Date(d.date).toLocaleDateString()}\n🚗 ${d.carNumber}\n💰 ${d.price > 0 ? d.price.toLocaleString() + " so'm" : "BEPUL"}`, { parse_mode: "Markdown" });
                 }
             }
             await sendMainMenu(chatId, true, deviceType);
@@ -1379,7 +1547,7 @@ bot.on("message", async (msg) => {
             } else {
                 let msg = "📅 *BUGUNGI DIAGNOSTIKALAR*\n\n";
                 diags.forEach(d => {
-                    msg += "🚗 " + d.carNumber + "\n💰 " + (d.price > 0 ? d.price.toLocaleString() + " so'm" : "BEPUL") + "\n━━━━━━━━━━━━━━━━━━\n";
+                    msg += `🚗 ${d.carNumber}\n💰 ${d.price > 0 ? d.price.toLocaleString() + " so'm" : "BEPUL"}\n━━━━━━━━━━━━━━━━━━\n`;
                 });
                 await bot.sendMessage(chatId, msg, { parse_mode: "Markdown" });
             }
@@ -1465,6 +1633,33 @@ bot.on("message", async (msg) => {
                 [{ text: "🔙 Orqaga", callback_data: "security_back" }]
             ];
             await bot.sendMessage(chatId, "🔐 *XAVFSIZLIK SOZLAMALARI*", { parse_mode: "Markdown", reply_markup: { inline_keyboard: keyboard } });
+        }
+        // ISH HAQINI TO'LASH
+        else if (text === "💳 Ish haqini to'lash") {
+            await bot.sendMessage(chatId, "💳 *ISH HAQINI TO'LASH*\n\nSummani tanlang yoki boshqa summa kiriting:", {
+                parse_mode: "Markdown",
+                ...getAdminSalaryKeyboard()
+            });
+        }
+        // ISH HAQI TARIXI
+        else if (text === "💰 Ish haqi tarixi") {
+            const records = getSalaryRecords();
+            if (records.length === 0) {
+                await bot.sendMessage(chatId, "📭 Ish haqi so'rovlari mavjud emas", { parse_mode: "Markdown" });
+            } else {
+                let msg = "💰 *ISH HAQI TARIXI*\n━━━━━━━━━━━━━━━━━━\n\n";
+                records.forEach(r => {
+                    const statusEmoji = r.status === "paid" ? "✅" : "⏳";
+                    msg += `${statusEmoji} *${r.amount.toLocaleString()} so'm*\n`;
+                    msg += `📅 ${new Date(r.date).toLocaleDateString()}\n`;
+                    if (r.status === "paid") {
+                        msg += `✅ To'langan: ${new Date(r.paidDate).toLocaleDateString()}\n`;
+                    }
+                    msg += "━━━━━━━━━━━━━━━━━━\n";
+                });
+                await bot.sendMessage(chatId, msg, { parse_mode: "Markdown" });
+            }
+            await sendMainMenu(chatId, true, deviceType);
         }
         // YANGI VERSIYAGA O'TISH
         else if (text === "🚀 Yangi versiya") {
@@ -1603,6 +1798,28 @@ bot.on("callback_query", async (query) => {
         await showVideoGallery(chatId);
         await sendMainMenu(chatId, false, deviceType);
     }
+    else if (data === "user_payment") {
+        await bot.sendMessage(chatId, getCardInfoMessage(), {
+            parse_mode: "Markdown",
+            ...getUserPaymentKeyboard()
+        });
+    }
+    else if (data === "show_card_number") {
+        await bot.sendMessage(chatId, getCardInfoMessage(), {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "📋 Karta raqamini nusxalash", callback_data: "copy_card_number" }],
+                    [{ text: "🔙 Ortga", callback_data: "user_payment" }]
+                ]
+            }
+        });
+    }
+    else if (data === "copy_card_number") {
+        await bot.sendMessage(chatId, `💳 *Karta raqami:* \`${CARD_NUMBER}\`\n\n👤 *Karta egasi:* ${CARD_OWNER}\n\nRaqamni nusxalash uchun bosing va ushlab turing.`, {
+            parse_mode: "Markdown"
+        });
+    }
     else if (data === "user_instagram") {
         await bot.sendMessage(chatId, "📸 *BIZNING INSTAGRAM*\n\n🔗 " + INSTAGRAM_LINK, {
             parse_mode: "Markdown",
@@ -1620,6 +1837,97 @@ bot.on("callback_query", async (query) => {
     else if (data === "user_info") {
         await bot.sendMessage(chatId, "ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 " + MAX_CARS_PER_USER + " tagacha avtomobil\n📞 Aloqa: " + ADMIN_PHONE + "\n📌 Versiya: " + BOT_VERSION, { parse_mode: "Markdown" });
         await sendMainMenu(chatId, false, deviceType);
+    }
+    
+    // Admin ish haqi callback'lari
+    else if (data === "salary_1000000") {
+        const record = addSalaryRecord(1000000, userId);
+        const links = getPaymentLinks(1000000);
+        await bot.sendMessage(chatId, `✅ *Ish haqi so'rovi yaratildi!*\n\n💵 Summa: 1,000,000 so'm\n🆔 ID: ${record.id}\n\n🔗 *To'lov linklari:*\n• Click: ${links.clickUrl}\n• Payme: ${links.paymeUrl}\n• Apelsin: ${links.apelsinUrl}\n\n📌 To'lov amalga oshirilgandan so'ng, "✅ To'lov amalga oshirildi" tugmasini bosing.`, {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "✅ To'lov amalga oshirildi", callback_data: `salary_paid_${record.id}` }],
+                    [{ text: "🔙 Ortga", callback_data: "back_to_main" }]
+                ]
+            }
+        });
+    }
+    else if (data === "salary_2000000") {
+        const record = addSalaryRecord(2000000, userId);
+        const links = getPaymentLinks(2000000);
+        await bot.sendMessage(chatId, `✅ *Ish haqi so'rovi yaratildi!*\n\n💵 Summa: 2,000,000 so'm\n🆔 ID: ${record.id}\n\n🔗 *To'lov linklari:*\n• Click: ${links.clickUrl}\n• Payme: ${links.paymeUrl}\n• Apelsin: ${links.apelsinUrl}\n\n📌 To'lov amalga oshirilgandan so'ng, "✅ To'lov amalga oshirildi" tugmasini bosing.`, {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "✅ To'lov amalga oshirildi", callback_data: `salary_paid_${record.id}` }],
+                    [{ text: "🔙 Ortga", callback_data: "back_to_main" }]
+                ]
+            }
+        });
+    }
+    else if (data === "salary_3000000") {
+        const record = addSalaryRecord(3000000, userId);
+        const links = getPaymentLinks(3000000);
+        await bot.sendMessage(chatId, `✅ *Ish haqi so'rovi yaratildi!*\n\n💵 Summa: 3,000,000 so'm\n🆔 ID: ${record.id}\n\n🔗 *To'lov linklari:*\n• Click: ${links.clickUrl}\n• Payme: ${links.paymeUrl}\n• Apelsin: ${links.apelsinUrl}\n\n📌 To'lov amalga oshirilgandan so'ng, "✅ To'lov amalga oshirildi" tugmasini bosing.`, {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "✅ To'lov amalga oshirildi", callback_data: `salary_paid_${record.id}` }],
+                    [{ text: "🔙 Ortga", callback_data: "back_to_main" }]
+                ]
+            }
+        });
+    }
+    else if (data === "salary_5000000") {
+        const record = addSalaryRecord(5000000, userId);
+        const links = getPaymentLinks(5000000);
+        await bot.sendMessage(chatId, `✅ *Ish haqi so'rovi yaratildi!*\n\n💵 Summa: 5,000,000 so'm\n🆔 ID: ${record.id}\n\n🔗 *To'lov linklari:*\n• Click: ${links.clickUrl}\n• Payme: ${links.paymeUrl}\n• Apelsin: ${links.apelsinUrl}\n\n📌 To'lov amalga oshirilgandan so'ng, "✅ To'lov amalga oshirildi" tugmasini bosing.`, {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "✅ To'lov amalga oshirildi", callback_data: `salary_paid_${record.id}` }],
+                    [{ text: "🔙 Ortga", callback_data: "back_to_main" }]
+                ]
+            }
+        });
+    }
+    else if (data === "salary_custom") {
+        const session = getUserSession(userId);
+        session.step = "admin_salary_custom";
+        await bot.sendMessage(chatId, "✏️ *Ish haqi summasini kiriting:*\n\nFaqat raqamlar bilan (so'mda):\nMasalan: 1500000", {
+            parse_mode: "Markdown",
+            reply_markup: { remove_keyboard: true }
+        });
+    }
+    else if (data === "salary_history") {
+        const records = getSalaryRecords();
+        if (records.length === 0) {
+            await bot.sendMessage(chatId, "📭 Ish haqi so'rovlari mavjud emas", { parse_mode: "Markdown" });
+        } else {
+            let msg = "💰 *ISH HAQI TARIXI*\n━━━━━━━━━━━━━━━━━━\n\n";
+            records.forEach(r => {
+                const statusEmoji = r.status === "paid" ? "✅" : "⏳";
+                msg += `${statusEmoji} *${r.amount.toLocaleString()} so'm*\n`;
+                msg += `📅 ${new Date(r.date).toLocaleDateString()}\n`;
+                if (r.status === "paid") {
+                    msg += `✅ To'langan: ${new Date(r.paidDate).toLocaleDateString()}\n`;
+                }
+                msg += "━━━━━━━━━━━━━━━━━━\n";
+            });
+            await bot.sendMessage(chatId, msg, { parse_mode: "Markdown" });
+        }
+        await sendMainMenu(chatId, true, deviceType);
+    }
+    else if (data.startsWith("salary_paid_")) {
+        const recordId = parseInt(data.split("_")[2]);
+        if (updateSalaryStatus(recordId, "paid")) {
+            await bot.sendMessage(chatId, "✅ *To'lov muvaffaqiyatli qayd etildi!*\n\nIsh haqi to'langan deb belgilandi.", { parse_mode: "Markdown" });
+            addSecurityLog("SALARY_PAID", userId, `Ish haqi to'landi: ID ${recordId}`);
+        } else {
+            await bot.sendMessage(chatId, "❌ *Xatolik!* So'rov topilmadi.", { parse_mode: "Markdown" });
+        }
+        await sendMainMenu(chatId, true, deviceType);
     }
     
     // Security callback'lari
@@ -1698,6 +2006,7 @@ bot.on("callback_query", async (query) => {
         if (restoreBackup(backupName)) {
             loadData();
             loadVideos();
+            loadSalaryRecords();
             await bot.sendMessage(chatId, "✅ *Database tiklandi!*", { parse_mode: "Markdown" });
         } else {
             await bot.sendMessage(chatId, "❌ *Xatolik!*", { parse_mode: "Markdown" });
@@ -1843,6 +2152,7 @@ loadVersion();
 loadData();
 loadAdminSettings();
 loadVideos();
+loadSalaryRecords();
 
 console.log("=".repeat(60));
 console.log("🚗 ISUZU DOCTOR BOT ISHGA TUSHDI");
@@ -1852,6 +2162,7 @@ console.log("👑 Adminlar: " + ADMIN_IDS.join(", "));
 console.log("👥 Foydalanuvchilar: " + users.filter(u => !u.isAdmin).length);
 console.log("🔧 Diagnostikalar: " + diagnostics.length);
 console.log("📹 Videolar: " + videoList.length + " ta");
+console.log("💳 Karta: " + CARD_NUMBER);
 console.log("💾 Volume manzili: " + VOLUME_PATH);
 console.log("=".repeat(60));
 console.log("✅ Bot ishlashga tayyor!");
