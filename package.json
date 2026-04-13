@@ -1,16 +1,12 @@
 {
-  "name": "moyka-f-bot",
+  "name": "isuzu-doctor-bot",
   "version": "1.0.0",
-  "description": "Moyka F Bot - Avtomobil moykasi va diagnostika boti",
-  "main": "index.js",
+  "description": "ISUZU DOCTOR Telegram Bot",
+  "main": "bot.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node bot.js"
   },
   "dependencies": {
-    "node-telegram-bot-api": "^0.64.0",
-    "qrcode": "^1.5.3"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "node-telegram-bot-api": "^0.64.0"
   }
 }
