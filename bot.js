@@ -13,31 +13,6 @@ const CARD_NUMBER = "9860040115220143";
 const CARD_OWNER = "Erkinjon Shukurov";
 const BANK_NAME = "Xalq Bank";
 
-// To'lov linklarini yaratish funksiyalari
-function getPaymentLinks(amount = 0) {
-    return {
-        clickUrl: `https://my.click.uz/services/pay?service_id=1&merchant_id=1&amount=${amount}&card=${CARD_NUMBER}`,
-        paymeUrl: `https://payme.uz?card=${CARD_NUMBER}&amount=${amount}`,
-        apelsinUrl: `https://apelsin.uz/pay?card=${CARD_NUMBER}&amount=${amount}`
-    };
-}
-
-// Foydalanuvchi uchun to'lov tugmalari
-function getUserPaymentKeyboard() {
-    const links = getPaymentLinks();
-    return {
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: "💳 Click orqali to'lash", url: links.clickUrl }],
-                [{ text: "💳 Payme orqali to'lash", url: links.paymeUrl }],
-                [{ text: "🍊 Apelsin orqali to'lash", url: links.apelsinUrl }],
-                [{ text: "🏦 Karta raqamini ko'rish", callback_data: "show_card_number" }],
-                [{ text: "🔙 Ortga", callback_data: "back_to_main" }]
-            ]
-        }
-    };
-}
-
 // Karta ma'lumotlarini ko'rsatish
 function getCardInfoMessage() {
     return `
@@ -49,11 +24,23 @@ function getCardInfoMessage() {
 
 📌 *To'lov qilish uchun:*
 1. Karta raqamini nusxalang
-2. Click, Payme yoki Apelsin orqali to'lov qiling
+2. O'z bankingiz ilovasida to'lov qiling
 3. To'lov chekini saqlang
 
 ✅ To'lov amalga oshirilgandan so'ng, administrator bilan bog'lanishingiz mumkin.
     `;
+}
+
+// Foydalanuvchi uchun to'lov tugmalari
+function getUserPaymentKeyboard() {
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: "🏦 Karta raqamini ko'rish", callback_data: "show_card_number" }],
+                [{ text: "🔙 Ortga", callback_data: "back_to_main" }]
+            ]
+        }
+    };
 }
 
 // -------------------- XAVFSIZLIK VA ADMIN --------------------
@@ -175,6 +162,39 @@ function updateVideoLikes(videoId, userId) {
 
 function getActiveVideos() {
     return videoList.filter(v => v.isActive);
+}
+
+// ======================== YANGI VIDEO XABARI (QO'SHILGAN FUNKSIYA) ========================
+// Yangi video yuklanganda barcha foydalanuvchilarga xabar yuborish
+async function notifyUsersAboutNewVideo(videoTitle, adminId) {
+    const activeUsers = users.filter(u => !u.isAdmin && !u.isBlocked);
+    let successCount = 0;
+    let failCount = 0;
+    
+    // Admin haqida ma'lumot olish
+    const admin = getUserByUserId(adminId);
+    const adminName = admin ? (admin.fullName || admin.phone || "Admin") : "Admin";
+    
+    for (const user of activeUsers) {
+        try {
+            await bot.sendMessage(user.userId, `📹 *YANGI VIDEO YUKLANDI!*\n\n🎬 *Nomi:* ${videoTitle}\n👤 *Yukladi:* ${adminName}\n📅 *Sana:* ${new Date().toLocaleString()}\n\n▶️ Videoni ko'rish uchun asosiy menyudagi "📹 Video" tugmasini bosing!`, {
+                parse_mode: "Markdown",
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "📹 Videoni ko'rish", callback_data: "user_video_gallery" }]
+                    ]
+                }
+            });
+            successCount++;
+            await new Promise(resolve => setTimeout(resolve, 50)); // Rate limit uchun
+        } catch (error) {
+            failCount++;
+            console.error(`Xabar yuborilmadi (${user.userId}):`, error.message);
+        }
+    }
+    
+    console.log(`✅ Yangi video xabari yuborildi: ${successCount} ta foydalanuvchiga, ${failCount} ta xato`);
+    return { success: successCount, fail: failCount };
 }
 
 // -------------------- ESLATMA MATNI --------------------
@@ -873,7 +893,7 @@ function getCompactInlineKeyboard() {
     };
 }
 
-// ADMIN UCHUN REPLY KEYBOARD (ISH HAQI TUGMALARI O'CHIRILDI)
+// ADMIN UCHUN REPLY KEYBOARD
 function getAdminReplyKeyboard() {
     const keyboard = [
         ["📊 Statistika", "👥 Foydalanuvchilar"],
@@ -1154,9 +1174,16 @@ bot.on("message", async (msg) => {
         }
         
         session.data.description = text || "";
+        
+        // Videoni saqlash
         addVideo(session.data.videoFileId, session.data.title, session.data.description, userId);
         
         await bot.sendMessage(chatId, "✅ *Video muvaffaqiyatli yuklandi!*\n\n📹 *Nomi:* " + session.data.title, { parse_mode: "Markdown" });
+        
+        // ======================== YANGI QO'SHILGAN QISM ========================
+        // Barcha foydalanuvchilarga yangi video yuklangani haqida xabar yuborish
+        await notifyUsersAboutNewVideo(session.data.title, userId);
+        // ================================================================
         
         clearUserSession(userId);
         await sendMainMenu(chatId, true, getUserDevice(userId));
