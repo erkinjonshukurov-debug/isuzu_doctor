@@ -8,6 +8,37 @@ const NEW_BOT_LINK = "https://t.me/Isuzu_doctor_bot";
 const INSTAGRAM_LINK = "https://www.instagram.com/isuzu.samarkand";
 const TELEGRAM_GROUP_LINK = "https://t.me/+piY0W4XrGqFkN2Iy";
 
+// -------------------- VAQT ZONASI FUNKSIYALARI (TOSHKENT UTC+5) --------------------
+function getTashkentTime(date) {
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    // Toshkent vaqti UTC+5
+    const tashkentOffset = 5 * 60 * 60 * 1000;
+    const utcTime = dateObj.getTime();
+    return new Date(utcTime + tashkentOffset);
+}
+
+function formatTashkentDate(date) {
+    const tashkentDate = getTashkentTime(date);
+    return tashkentDate.toLocaleDateString('uz-UZ', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
+}
+
+function formatTashkentTime(date) {
+    const tashkentDate = getTashkentTime(date);
+    return tashkentDate.toLocaleTimeString('uz-UZ', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
+}
+
+function formatTashkentDateTime(date) {
+    return `${formatTashkentDate(date)} ${formatTashkentTime(date)}`;
+}
+
 // -------------------- TO'LOV MA'LUMOTLARI --------------------
 const CARD_NUMBER = "9860040115220143";
 const CARD_OWNER = "Erkinjon Shukurov";
@@ -164,20 +195,18 @@ function getActiveVideos() {
     return videoList.filter(v => v.isActive);
 }
 
-// ======================== YANGI VIDEO XABARI (QO'SHILGAN FUNKSIYA) ========================
 // Yangi video yuklanganda barcha foydalanuvchilarga xabar yuborish
 async function notifyUsersAboutNewVideo(videoTitle, adminId) {
     const activeUsers = users.filter(u => !u.isAdmin && !u.isBlocked);
     let successCount = 0;
     let failCount = 0;
     
-    // Admin haqida ma'lumot olish
     const admin = getUserByUserId(adminId);
     const adminName = admin ? (admin.fullName || admin.phone || "Admin") : "Admin";
     
     for (const user of activeUsers) {
         try {
-            await bot.sendMessage(user.userId, `📹 *YANGI VIDEO YUKLANDI!*\n\n🎬 *Nomi:* ${videoTitle}\n👤 *Yukladi:* ${adminName}\n📅 *Sana:* ${new Date().toLocaleString()}\n\n▶️ Videoni ko'rish uchun asosiy menyudagi "📹 Video" tugmasini bosing!`, {
+            await bot.sendMessage(user.userId, `📹 *YANGI VIDEO YUKLANDI!*\n\n🎬 *Nomi:* ${videoTitle}\n👤 *Yukladi:* ${adminName}\n📅 *Sana:* ${formatTashkentDateTime(new Date())}\n\n▶️ Videoni ko'rish uchun asosiy menyudagi "📹 Video" tugmasini bosing!`, {
                 parse_mode: "Markdown",
                 reply_markup: {
                     inline_keyboard: [
@@ -186,7 +215,7 @@ async function notifyUsersAboutNewVideo(videoTitle, adminId) {
                 }
             });
             successCount++;
-            await new Promise(resolve => setTimeout(resolve, 50)); // Rate limit uchun
+            await new Promise(resolve => setTimeout(resolve, 50));
         } catch (error) {
             failCount++;
             console.error(`Xabar yuborilmadi (${user.userId}):`, error.message);
@@ -238,7 +267,7 @@ async function generateDiagnosticsReport(diagnosticsList) {
         content += "=".repeat(80) + "\n";
         content += "                    DIAGNOSTIKA HISOBOTI\n";
         content += "=".repeat(80) + "\n\n";
-        content += "Yaratilgan sana: " + new Date().toLocaleString() + "\n";
+        content += "Yaratilgan sana: " + formatTashkentDateTime(new Date()) + "\n";
         content += "Jami diagnostikalar: " + diagnosticsList.length + " ta\n\n";
         
         const paidCount = diagnosticsList.filter(d => !d.isFree).length;
@@ -257,7 +286,7 @@ async function generateDiagnosticsReport(diagnosticsList) {
         for (const diag of diagnosticsList.slice(0, 200)) {
             content += "📅 " + i + "-DIAGNOSTIKA\n";
             content += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-            content += "📆 Sana: " + new Date(diag.date).toLocaleString() + "\n";
+            content += "📆 Sana: " + formatTashkentDateTime(diag.date) + "\n";
             content += "🚗 Avtomobil raqami: " + diag.carNumber + "\n";
             content += "📝 Bajarilgan ishlar:\n" + diag.workDescription + "\n";
             
@@ -271,7 +300,7 @@ async function generateDiagnosticsReport(diagnosticsList) {
         }
         
         content += "\nJami: " + diagnosticsList.length + " ta diagnostika\n";
-        content += "Hisobot yaratildi: " + new Date().toLocaleString() + "\n";
+        content += "Hisobot yaratildi: " + formatTashkentDateTime(new Date()) + "\n";
         content += "=".repeat(80) + "\n";
         
         try {
@@ -861,7 +890,7 @@ async function showVideoGallery(chatId, page = 0) {
         if (video.description) {
             msg += "   📝 " + video.description.substring(0, 50) + (video.description.length > 50 ? "..." : "") + "\n";
         }
-        msg += "   📅 " + new Date(video.uploadDate).toLocaleDateString() + "\n";
+        msg += "   📅 " + formatTashkentDate(video.uploadDate) + "\n";
         msg += "━━━━━━━━━━━━━━━━━━\n";
         keyboard.push([{ text: "▶️ " + num + ". " + video.title.substring(0, 25), callback_data: "watch_video_" + video.id }]);
     }
@@ -1120,6 +1149,189 @@ bot.on("contact", async (msg) => {
     }
 });
 
+// -------------------- MATNLI BUYRUQLAR --------------------
+bot.onText(/\/profile/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const user = getUserByUserId(userId);
+    
+    if (!user) {
+        await bot.sendMessage(chatId, "❌ Ro'yxatdan o'tmagan! /start bosing.");
+        return;
+    }
+    
+    const carsList = user.cars.map(c => "🚗 " + c.carNumber + " (" + c.totalDiagnostics + " ta diagnostika)").join("\n");
+    await sendReminder(chatId);
+    await bot.sendMessage(chatId, "📊 *MENGING SAHIFAM*\n\n👤 *Ism:* " + (user.fullName || "Kiritilmagan") + "\n📞 *Telefon:* " + user.phone + "\n🚗 *Avtomobillar:* " + user.cars.length + "/" + MAX_CARS_PER_USER + "\n\n" + carsList + "\n\n🎁 *Umumiy bonuslar:* " + (user.totalBonusCount || 0) + "\n🎉 *Bepul diagnostika:* " + (user.totalFreeDiagnostics || 0) + " ta\n📊 *Jami diagnostika:* " + (user.totalDiagnosticsAll || 0) + " ta\n📌 *Versiya:* " + BOT_VERSION, { parse_mode: "Markdown" });
+});
+
+bot.onText(/\/my_cars/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const user = getUserByUserId(userId);
+    
+    if (!user) {
+        await bot.sendMessage(chatId, "❌ Ro'yxatdan o'tmagan! /start bosing.");
+        return;
+    }
+    
+    if (user.cars.length === 0) {
+        await bot.sendMessage(chatId, "📭 Sizda hali avtomobillar mavjud emas!\n\n➕ '➕ Yangi avtomobil qo'shish' tugmasini bosing.");
+        return;
+    }
+    
+    let carsText = "🚗 *MENGING AVTOMOBILLARIM*\n\n📌 *Bonus qoidasi:* 5 diagnostika = 1 BEPUL\n━━━━━━━━━━━━━━━━━━\n\n";
+    for (const car of user.cars) {
+        const nextFree = 5 - car.bonusCount;
+        carsText += "🚗 *" + car.carNumber + "*\n";
+        carsText += "🎁 Bonus: " + car.bonusCount + "/5\n";
+        carsText += "🎉 Bepul: " + car.freeDiagnostics + " ta\n";
+        carsText += "📊 Diagnostika: " + car.totalDiagnostics + " ta\n";
+        carsText += "📅 Qo'shilgan: " + formatTashkentDate(car.addedDate) + "\n";
+        
+        if (car.freeDiagnostics > 0) {
+            carsText += "✅ *Bepul diagnostika mavjud!*\n";
+        } else if (nextFree > 0) {
+            carsText += "📌 Keyingi BEPUL: " + nextFree + " ta diagnostikadan keyin\n";
+        }
+        
+        carsText += "━━━━━━━━━━━━━━━━━━\n";
+    }
+    await sendReminder(chatId);
+    await bot.sendMessage(chatId, carsText, { parse_mode: "Markdown" });
+});
+
+bot.onText(/\/my_bonus/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const user = getUserByUserId(userId);
+    
+    if (!user) {
+        await bot.sendMessage(chatId, "❌ Ro'yxatdan o'tmagan! /start bosing.");
+        return;
+    }
+    
+    let bonusText = "🎁 *MENGING BONUSLARIM*\n\n📌 *Qoida:* Har 5 diagnostikada 1 ta BEPUL!\n━━━━━━━━━━━━━━━━━━\n\n";
+    for (const car of user.cars) {
+        const nextFree = 5 - car.bonusCount;
+        bonusText += "🚗 *" + car.carNumber + "*\n";
+        bonusText += "📊 To'plangan: " + car.bonusCount + "/5\n";
+        bonusText += "🎉 Bepul diagnostika: " + car.freeDiagnostics + " ta\n";
+        
+        if (car.freeDiagnostics > 0) {
+            bonusText += "✅ *Sizda " + car.freeDiagnostics + " ta BEPUL diagnostika bor!*\n";
+            bonusText += "💡 Keyingi diagnostikangiz BEPUL bo'ladi!\n";
+        } else if (nextFree > 0) {
+            bonusText += "📌 *Keyingi BEPUL diagnostika:* " + nextFree + " ta diagnostikadan keyin\n";
+            bonusText += "   (" + nextFree + " ta to'lovli diagnostika qilsangiz, 1 ta BEPUL olasiz)\n";
+        } else if (nextFree === 0 && car.bonusCount === 5) {
+            bonusText += "🎉 *DARHOL BEPUL diagnostika qozondingiz!*\n";
+            bonusText += "✅ Keyingi diagnostikangiz BEPUL bo'ladi!\n";
+        }
+        
+        bonusText += "━━━━━━━━━━━━━━━━━━\n";
+    }
+    bonusText += "\n🎯 *QANDAY ISHLAYDI?*\n";
+    bonusText += "• Har 5 ta to'lovli diagnostika = 1 ta BEPUL\n";
+    bonusText += "• Har bir avtomobil uchun bonus alohida hisoblanadi\n";
+    bonusText += "• Bepul diagnostika cheksiz muddatga amal qiladi\n";
+    bonusText += "• Admin diagnostika qo'shganda avtomatik hisoblanadi";
+    
+    await sendReminder(chatId);
+    await bot.sendMessage(chatId, bonusText, { parse_mode: "Markdown" });
+});
+
+// ======================== TARIX (HISTORY) - TOSHKENT VAQTI BILAN ========================
+bot.onText(/\/history/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    const user = getUserByUserId(userId);
+    
+    if (!user) {
+        await bot.sendMessage(chatId, "❌ Ro'yxatdan o'tmagan! /start bosing.");
+        return;
+    }
+    
+    const diags = getUserDiagnostics(user.phone, 15);
+    if (diags.length === 0) {
+        await bot.sendMessage(chatId, "📭 *Sizda hali diagnostikalar mavjud emas!*", { parse_mode: "Markdown" });
+        return;
+    }
+    
+    await sendReminder(chatId);
+    for (const d of diags) {
+        let diagText = "📅 *" + formatTashkentDate(d.date) + "*\n";
+        diagText += "🕐 " + formatTashkentTime(d.date) + "\n";
+        diagText += "🚗 *" + d.carNumber + "*\n\n";
+        diagText += "📝 *Bajarilgan ishlar:*\n" + d.workDescription + "\n\n";
+        
+        if (d.additionalNotes && d.additionalNotes !== "") {
+            diagText += "📌 *Eslatma:*\n" + d.additionalNotes + "\n\n";
+        }
+        
+        diagText += "💰 *Narx:* " + (d.price > 0 ? d.price.toLocaleString() + " so'm" : "🎉 BEPUL") + "\n";
+        diagText += "━━━━━━━━━━━━━━━━━━\n";
+        
+        await bot.sendMessage(chatId, diagText, { parse_mode: "Markdown" });
+    }
+});
+
+bot.onText(/\/info/, async (msg) => {
+    const chatId = msg.chat.id;
+    await sendReminder(chatId);
+    await bot.sendMessage(chatId, "ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 Bitta telefon bilan " + MAX_CARS_PER_USER + " tagacha avtomobil\n📞 Aloqa: " + ADMIN_PHONE + "\n📌 Bot versiyasi: " + BOT_VERSION + "\n🔗 Bot linki: " + NEW_BOT_LINK + "\n📸 Instagram: " + INSTAGRAM_LINK + "\n👥 Telegram guruhimiz: " + TELEGRAM_GROUP_LINK, { parse_mode: "Markdown" });
+});
+
+bot.onText(/\/close/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    clearUserSession(userId);
+    await sendMainMenu(chatId, isAdmin(userId), getUserDevice(userId));
+});
+
+// -------------------- ADMIN MATNLI BUYRUQLAR --------------------
+bot.onText(/\/statistika/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    if (!isAdmin(userId)) return;
+    
+    const stats = getStatistics();
+    await bot.sendMessage(chatId, "📊 *STATISTIKA*\n\n👥 Faol foydalanuvchilar: " + stats.totalUsers + "\n🚫 Bloklanganlar: " + stats.blockedUsers + "\n🚗 Avtomobillar: " + stats.totalCars + "\n🔧 Jami: " + stats.totalDiagnostics + "\n💰 To'lovli: " + stats.paidDiagnostics + "\n🎉 Bepul: " + stats.freeDiagnostics + "\n💵 Daromad: " + stats.totalIncome.toLocaleString() + " so'm\n⚠️ Xatoliklar: " + stats.totalErrors + "\n📹 Videolar: " + stats.totalVideos + " ta\n👁️ Video ko'rishlar: " + stats.totalVideoViews + " ta\n📌 Versiya: " + stats.currentVersion + "\n🔄 Yangilanish rejimi: " + (stats.isUpdateMode ? "Faol" : "O'chirilgan"), { parse_mode: "Markdown" });
+});
+
+bot.onText(/\/users/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    if (!isAdmin(userId)) return;
+    
+    const usersList = getAllUsersWithDetails();
+    if (usersList.length === 0) { 
+        await bot.sendMessage(chatId, "📭 Hech qanday foydalanuvchi yo'q"); 
+        return; 
+    }
+    
+    let msgText = "👥 *FOYDALANUVCHILAR*\n━━━━━━━━━━━━━━━━━━\n\n";
+    usersList.slice(0, 15).forEach((u, index) => { 
+        const status = u.isBlocked ? "🔴" : "🟢";
+        msgText += status + " *" + (index + 1) + ". " + (u.fullName || "Ism kiritilmagan") + "*\n";
+        msgText += "📞 " + u.phone + "\n";
+        msgText += "🚗 " + u.cars.map(c => c.carNumber).join(", ") + "\n";
+        msgText += "📊 " + u.totalDiagnostics + " ta diagnostika\n";
+        msgText += "━━━━━━━━━━━━━━━━━━\n";
+    });
+    await bot.sendMessage(chatId, msgText, { parse_mode: "Markdown" });
+});
+
+bot.onText(/\/add_diagnostic/, async (msg) => {
+    const chatId = msg.chat.id;
+    const userId = msg.from.id;
+    if (!isAdmin(userId)) return;
+    
+    const session = getUserSession(userId);
+    session.step = "admin_add_diagnostic";
+    await bot.sendMessage(chatId, "🔧 *Diagnostika qo'shish*\n\n🚗 Avtomobil raqamini kiriting:", { parse_mode: "Markdown", ...removeKeyboard() });
+});
+
 // -------------------- XABARLARNI QAYTA ISHLASH --------------------
 bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
@@ -1174,16 +1386,11 @@ bot.on("message", async (msg) => {
         }
         
         session.data.description = text || "";
-        
-        // Videoni saqlash
         addVideo(session.data.videoFileId, session.data.title, session.data.description, userId);
         
         await bot.sendMessage(chatId, "✅ *Video muvaffaqiyatli yuklandi!*\n\n📹 *Nomi:* " + session.data.title, { parse_mode: "Markdown" });
         
-        // ======================== YANGI QO'SHILGAN QISM ========================
-        // Barcha foydalanuvchilarga yangi video yuklangani haqida xabar yuborish
         await notifyUsersAboutNewVideo(session.data.title, userId);
-        // ================================================================
         
         clearUserSession(userId);
         await sendMainMenu(chatId, true, getUserDevice(userId));
@@ -1326,9 +1533,15 @@ bot.on("message", async (msg) => {
         
         let userMsg = "🔧 *DIAGNOSTIKA NATIJALARI*\n\n";
         userMsg += "🚗 *" + result.carNumber + "*\n";
-        userMsg += "📅 " + new Date().toLocaleString() + "\n\n";
-        userMsg += "📝 " + session.data.workDescription + "\n\n";
-        userMsg += "💰 " + result.price.toLocaleString() + " so'm\n\n";
+        userMsg += "📅 " + formatTashkentDate(new Date()) + "\n";
+        userMsg += "🕐 " + formatTashkentTime(new Date()) + "\n\n";
+        userMsg += "📝 *Bajarilgan ishlar:*\n" + session.data.workDescription + "\n\n";
+        
+        if (session.data.additionalNotes && session.data.additionalNotes !== "") {
+            userMsg += "📌 *Eslatma:*\n" + session.data.additionalNotes + "\n\n";
+        }
+        
+        userMsg += "💰 *Narx:* " + result.price.toLocaleString() + " so'm\n\n";
         userMsg += result.bonusMessage;
         
         bot.sendMessage(session.data.targetUser.userId, userMsg, { parse_mode: "Markdown" }).catch(() => {});
@@ -1428,7 +1641,7 @@ bot.on("message", async (msg) => {
             } else {
                 let msg = "⚠️ *XATOLIKLAR*\n\n";
                 errorsList.slice(0, 10).forEach(e => {
-                    msg += `🚗 ${e.carNumber}\n📝 ${e.errorDescription || "Xatolik"}\n📅 ${new Date(e.date).toLocaleDateString()}\n━━━━━━━━━━━━━━━━━━\n`;
+                    msg += `🚗 ${e.carNumber}\n📝 ${e.errorDescription || "Xatolik"}\n📅 ${formatTashkentDate(e.date)}\n━━━━━━━━━━━━━━━━━━\n`;
                 });
                 await bot.sendMessage(chatId, msg, { parse_mode: "Markdown" });
             }
@@ -1441,7 +1654,7 @@ bot.on("message", async (msg) => {
                 await bot.sendMessage(chatId, "📭 Diagnostikalar yo'q", { parse_mode: "Markdown" });
             } else {
                 for (const d of diags.slice(0, 10)) {
-                    await bot.sendMessage(chatId, `📅 ${new Date(d.date).toLocaleDateString()}\n🚗 ${d.carNumber}\n💰 ${d.price > 0 ? d.price.toLocaleString() + " so'm" : "BEPUL"}`, { parse_mode: "Markdown" });
+                    await bot.sendMessage(chatId, `📅 ${formatTashkentDate(d.date)}\n🚗 ${d.carNumber}\n💰 ${d.price > 0 ? d.price.toLocaleString() + " so'm" : "BEPUL"}`, { parse_mode: "Markdown" });
                 }
             }
             await sendMainMenu(chatId, true, deviceType);
@@ -1466,7 +1679,7 @@ bot.on("message", async (msg) => {
             try {
                 const allDiagnostics = getAllDiagnostics(500);
                 const filepath = await generateDiagnosticsReport(allDiagnostics);
-                await bot.sendDocument(chatId, filepath, { caption: "📊 Diagnostika hisoboti\n📅 " + new Date().toLocaleString() });
+                await bot.sendDocument(chatId, filepath, { caption: "📊 Diagnostika hisoboti\n📅 " + formatTashkentDateTime(new Date()) });
                 setTimeout(() => fs.unlinkSync(filepath), 60000);
             } catch (error) {
                 await bot.sendMessage(chatId, "❌ *Xatolik!*", { parse_mode: "Markdown" });
@@ -1656,6 +1869,7 @@ bot.on("callback_query", async (query) => {
             reply_markup: { remove_keyboard: true }
         });
     }
+    // ======================== TARIX (HISTORY) - TOSHKENT VAQTI BILAN ========================
     else if (data === "user_history") {
         const diags = getUserDiagnostics(user.phone, 10);
         if (diags.length === 0) {
@@ -1665,11 +1879,18 @@ bot.on("callback_query", async (query) => {
         }
         
         for (const d of diags) {
-            let diagText = "📅 *" + new Date(d.date).toLocaleDateString() + "*\n";
-            diagText += "🚗 *" + d.carNumber + "*\n";
-            diagText += "📝 " + d.workDescription.substring(0, 100) + (d.workDescription.length > 100 ? "..." : "") + "\n";
-            diagText += "💰 " + (d.price > 0 ? d.price.toLocaleString() + " so'm" : "BEPUL") + "\n";
+            let diagText = "📅 *" + formatTashkentDate(d.date) + "*\n";
+            diagText += "🕐 " + formatTashkentTime(d.date) + "\n";
+            diagText += "🚗 *" + d.carNumber + "*\n\n";
+            diagText += "📝 *Bajarilgan ishlar:*\n" + d.workDescription + "\n\n";
+            
+            if (d.additionalNotes && d.additionalNotes !== "") {
+                diagText += "📌 *Eslatma:*\n" + d.additionalNotes + "\n\n";
+            }
+            
+            diagText += "💰 *Narx:* " + (d.price > 0 ? d.price.toLocaleString() + " so'm" : "🎉 BEPUL") + "\n";
             diagText += "━━━━━━━━━━━━━━━━━━\n";
+            
             await bot.sendMessage(chatId, diagText, { parse_mode: "Markdown" });
         }
         await sendMainMenu(chatId, false, deviceType);
@@ -1719,7 +1940,7 @@ bot.on("callback_query", async (query) => {
         await sendMainMenu(chatId, false, deviceType);
     }
     
-    // Security callback'lari
+    // Security callback'lari (qisqartirilgan, avvalgidek)
     else if (data === "security_allowed_admins") {
         let msg = "👥 *RUXSAT BERILGAN ADMINLAR*\n━━━━━━━━━━━━━━━━━━\n\n";
         if (adminSettings.allowedEditors.length === 0) {
@@ -1768,7 +1989,7 @@ bot.on("callback_query", async (query) => {
             msg += "Hech qanday hodisa yo'q.";
         } else {
             adminSettings.securityLog.slice(0, 15).forEach(log => {
-                msg += "📅 " + new Date(log.date).toLocaleString() + "\n";
+                msg += "📅 " + formatTashkentDateTime(log.date) + "\n";
                 msg += "🔹 " + log.action + "\n";
                 msg += "📝 " + log.details + "\n";
                 msg += "━━━━━━━━━━━━━━━━━━\n";
