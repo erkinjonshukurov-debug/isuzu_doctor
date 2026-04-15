@@ -1806,7 +1806,7 @@ bot.on("message", async (msg) => {
                 await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: keyboard } });
             }
         }
-        // FOYDALANUVCHILARNI BOSHQARISH (3 USTUNDA, AVTOMOBIL RAQAMI BILAN)
+        // FOYDALANUVCHILARNI BOSHQARISH (FAQAT AVTOMOBIL RAQAMI BILAN)
         else if (text === "🚫 Foyd. boshqarish") {
             const activeUsers = getActiveUsers();
             const blockedUsers = getBlockedUsers();
@@ -1825,7 +1825,7 @@ bot.on("message", async (msg) => {
             
             let msg = `👥 *FOYDALANUVCHILARNI BOSHQARISH*\n\n🟢 Faol: ${activeUsers.length}\n🔴 Bloklangan: ${blockedUsers.length}\n📄 Sahifa ${userManagePage + 1}/${totalPages}\n━━━━━━━━━━━━━━━━━━\n\n`;
             
-            // 3 ustunda ko'rsatish uchun (2-1-2-1 format)
+            // 3 ustunda faqat avtomobil raqami bilan ko'rsatish
             const keyboard = [];
             let row = [];
             
@@ -1833,14 +1833,13 @@ bot.on("message", async (msg) => {
                 const userObj = pageUsers[i];
                 const num = start + i + 1;
                 const status = userObj.isBlocked ? "🔴" : "🟢";
-                const carsStr = userObj.cars.map(c => c.carNumber).join(", ");
-                const shortCars = carsStr.length > 8 ? carsStr.substring(0, 8) + ".." : carsStr;
-                const name = (userObj.fullName || "Ismsiz").substring(0, 12);
-                const displayText = `${status} ${num}. ${name} | ${shortCars}`;
+                // Faqat avtomobil raqamini olish (birinchi avtomobil)
+                const carNumber = userObj.cars.length > 0 ? userObj.cars[0].carNumber : "🚫 Avto yo'q";
+                const displayText = `${status} ${num}. ${carNumber}`;
                 
-                row.push({ text: displayText.substring(0, 25), callback_data: `manage_user_${userObj.userId}` });
+                row.push({ text: displayText.substring(0, 20), callback_data: `manage_user_${userObj.userId}` });
                 
-                // Har 2 tugmadan keyin yangi qator (2-1-2-1 format)
+                // Har 2 tugmadan keyin yangi qator
                 if (row.length === 2) {
                     keyboard.push([...row]);
                     row = [];
@@ -1918,7 +1917,7 @@ bot.on("message", async (msg) => {
         // ASOSIY MENYU
         else if (text === "❌ Asosiy menyu") {
             clearUserSession(userId);
-            userManagePage = 0; // Sahifani reset qilish
+            userManagePage = 0;
             await sendMainMenu(chatId, true, deviceType);
         }
         else if (!session.step) {
@@ -2151,12 +2150,10 @@ bot.on("callback_query", async (query) => {
                 const userObj = pageUsers[i];
                 const num = start + i + 1;
                 const status = userObj.isBlocked ? "🔴" : "🟢";
-                const carsStr = userObj.cars.map(c => c.carNumber).join(", ");
-                const shortCars = carsStr.length > 8 ? carsStr.substring(0, 8) + ".." : carsStr;
-                const name = (userObj.fullName || "Ismsiz").substring(0, 12);
-                const displayText = `${status} ${num}. ${name} | ${shortCars}`;
+                const carNumber = userObj.cars.length > 0 ? userObj.cars[0].carNumber : "🚫 Avto yo'q";
+                const displayText = `${status} ${num}. ${carNumber}`;
                 
-                row.push({ text: displayText.substring(0, 25), callback_data: `manage_user_${userObj.userId}` });
+                row.push({ text: displayText.substring(0, 20), callback_data: `manage_user_${userObj.userId}` });
                 
                 if (row.length === 2) {
                     keyboard.push([...row]);
@@ -2214,12 +2211,10 @@ bot.on("callback_query", async (query) => {
             const userObj = pageUsers[i];
             const num = start + i + 1;
             const status = userObj.isBlocked ? "🔴" : "🟢";
-            const carsStr = userObj.cars.map(c => c.carNumber).join(", ");
-            const shortCars = carsStr.length > 8 ? carsStr.substring(0, 8) + ".." : carsStr;
-            const name = (userObj.fullName || "Ismsiz").substring(0, 12);
-            const displayText = `${status} ${num}. ${name} | ${shortCars}`;
+            const carNumber = userObj.cars.length > 0 ? userObj.cars[0].carNumber : "🚫 Avto yo'q";
+            const displayText = `${status} ${num}. ${carNumber}`;
             
-            row.push({ text: displayText.substring(0, 25), callback_data: `manage_user_${userObj.userId}` });
+            row.push({ text: displayText.substring(0, 20), callback_data: `manage_user_${userObj.userId}` });
             
             if (row.length === 2) {
                 keyboard.push([...row]);
