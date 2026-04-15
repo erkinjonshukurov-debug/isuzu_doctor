@@ -929,16 +929,17 @@ function getAdminReplyKeyboard() {
         ["📅 Bugungi", "📄 Hisobot"],
         ["📹 Video galereya", "📤 Video yuklash"],
         ["💾 Backup", "🔄 Tiklash"],
-        ["🚫 Foyd. boshqarish", "🔐 Xavfsizlik"]
+        ["🚫 Foyd. boshqarish", "🔐 Xavfsizlik"],
+        ["🚀 Yangi botga o'tish", "❌ Asosiy menyu"]
     ];
     
     if (!isUpdateMode) {
-        keyboard.push(["🚀 Yangi versiyaga o'tish"]);
+        // keyboard.push(["🚀 Yangi versiyaga o'tish"]);
     } else {
         keyboard.push(["✅ Yangilanish rejimi o'chirish"]);
     }
     
-    keyboard.push(["❌ Asosiy menyu"]);
+    // keyboard.push(["❌ Asosiy menyu"]);
     
     return {
         reply_markup: {
@@ -1239,7 +1240,6 @@ bot.onText(/\/my_bonus/, async (msg) => {
     await bot.sendMessage(chatId, bonusText, { parse_mode: "Markdown" });
 });
 
-// ======================== TARIX (HISTORY) ========================
 bot.onText(/\/history/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -1752,9 +1752,9 @@ bot.on("message", async (msg) => {
             ];
             await bot.sendMessage(chatId, "🔐 *XAVFSIZLIK SOZLAMALARI*", { parse_mode: "Markdown", reply_markup: { inline_keyboard: keyboard } });
         }
-        // YANGI VERSIYAGA O'TISH (ADMIN UCHUN)
-        else if (text === "🚀 Yangi versiyaga o'tish") {
-            await bot.sendMessage(chatId, `🚀 *YANGI VERSIYAGA O'TISH*\n\nYangi botga quyidagi link orqali o'tishingiz mumkin:\n\n🔗 ${NEW_BOT_LINK}\n\n✅ Yangi botda barcha funksiyalar mavjud!`, {
+        // YANGI BOTGA O'TISH (ADMIN UCHUN)
+        else if (text === "🚀 Yangi botga o'tish") {
+            await bot.sendMessage(chatId, `🚀 *YANGI BOTGA O'TISH*\n\nYangi botda yanada qulayroq xizmatlar va funksiyalar mavjud!\n\n🔗 *Yangi bot linki:* ${NEW_BOT_LINK}\n\n👇 Pastdagi tugma orqali o'tishingiz mumkin:`, {
                 parse_mode: "Markdown",
                 reply_markup: {
                     inline_keyboard: [
