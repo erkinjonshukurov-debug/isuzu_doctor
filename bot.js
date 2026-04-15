@@ -11,7 +11,6 @@ const TELEGRAM_GROUP_LINK = "https://t.me/+piY0W4XrGqFkN2Iy";
 // -------------------- VAQT ZONASI FUNKSIYALARI (TOSHKENT UTC+5) --------------------
 function getTashkentTime(date) {
     const dateObj = typeof date === 'string' ? new Date(date) : date;
-    // Toshkent vaqti UTC+5
     const tashkentOffset = 5 * 60 * 60 * 1000;
     const utcTime = dateObj.getTime();
     return new Date(utcTime + tashkentOffset);
@@ -44,7 +43,6 @@ const CARD_NUMBER = "9860040115220143";
 const CARD_OWNER = "Erkinjon Shukurov";
 const BANK_NAME = "Xalq Bank";
 
-// Karta ma'lumotlarini ko'rsatish
 function getCardInfoMessage() {
     return `
 🏦 *KARTA MA'LUMOTLARI*
@@ -62,7 +60,6 @@ function getCardInfoMessage() {
     `;
 }
 
-// Foydalanuvchi uchun to'lov tugmalari
 function getUserPaymentKeyboard() {
     return {
         reply_markup: {
@@ -195,7 +192,6 @@ function getActiveVideos() {
     return videoList.filter(v => v.isActive);
 }
 
-// Yangi video yuklanganda barcha foydalanuvchilarga xabar yuborish
 async function notifyUsersAboutNewVideo(videoTitle, adminId) {
     const activeUsers = users.filter(u => !u.isAdmin && !u.isBlocked);
     let successCount = 0;
@@ -435,11 +431,12 @@ async function notifyAllUsersAboutUpdate() {
     
     for (const user of activeUsers) {
         try {
-            await bot.sendMessage(user.userId, "🚀 *YANGI VERSIYA CHIQDI!*\n\nBotimiz yangilandi. Iltimos, yangi botga o'ting:\n" + NEW_BOT_LINK, {
+            await bot.sendMessage(user.userId, "🚀 *YANGI VERSIYA CHIQDI!*\n\nBotimiz yangilandi. Iltimos, yangi botga o'tish tugmasini bosing:", {
                 parse_mode: "Markdown",
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: "🚀 Yangi botga o'tish", url: NEW_BOT_LINK }]
+                        [{ text: "🚀 Yangi botga o'tish", url: NEW_BOT_LINK }],
+                        [{ text: "🏠 Asosiy menyu", callback_data: "back_to_main" }]
                     ]
                 }
             });
@@ -915,7 +912,8 @@ function getCompactInlineKeyboard() {
                 [{ text: "🎁 Bonuslar", callback_data: "user_my_bonus" }, { text: "➕ Avto qo'shish", callback_data: "user_add_car" }],
                 [{ text: "📋 Tarix", callback_data: "user_history" }, { text: "📹 Video", callback_data: "user_video_gallery" }],
                 [{ text: "💳 To'lov", callback_data: "user_payment" }, { text: "📸 Instagram", callback_data: "user_instagram" }],
-                [{ text: "👥 Guruh", callback_data: "user_telegram_group" }, { text: "ℹ️ Ma'lumot", callback_data: "user_info" }]
+                [{ text: "👥 Guruh", callback_data: "user_telegram_group" }, { text: "ℹ️ Ma'lumot", callback_data: "user_info" }],
+                [{ text: "🚀 Yangi botga o'tish", callback_data: "user_new_bot" }]
             ],
             resize_keyboard: true
         }
@@ -935,7 +933,7 @@ function getAdminReplyKeyboard() {
     ];
     
     if (!isUpdateMode) {
-        keyboard.push(["🚀 Yangi versiya"]);
+        keyboard.push(["🚀 Yangi versiyaga o'tish"]);
     } else {
         keyboard.push(["✅ Yangilanish rejimi o'chirish"]);
     }
@@ -1241,7 +1239,7 @@ bot.onText(/\/my_bonus/, async (msg) => {
     await bot.sendMessage(chatId, bonusText, { parse_mode: "Markdown" });
 });
 
-// ======================== TARIX (HISTORY) - TOSHKENT VAQTI BILAN ========================
+// ======================== TARIX (HISTORY) ========================
 bot.onText(/\/history/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -1754,11 +1752,16 @@ bot.on("message", async (msg) => {
             ];
             await bot.sendMessage(chatId, "🔐 *XAVFSIZLIK SOZLAMALARI*", { parse_mode: "Markdown", reply_markup: { inline_keyboard: keyboard } });
         }
-        // YANGI VERSIYAGA O'TISH
-        else if (text === "🚀 Yangi versiya") {
-            await bot.sendMessage(chatId, "⚠️ *YANGI VERSIYAGA O'TISH*\n\nDavom etasizmi?", {
+        // YANGI VERSIYAGA O'TISH (ADMIN UCHUN)
+        else if (text === "🚀 Yangi versiyaga o'tish") {
+            await bot.sendMessage(chatId, `🚀 *YANGI VERSIYAGA O'TISH*\n\nYangi botga quyidagi link orqali o'tishingiz mumkin:\n\n🔗 ${NEW_BOT_LINK}\n\n✅ Yangi botda barcha funksiyalar mavjud!`, {
                 parse_mode: "Markdown",
-                reply_markup: { inline_keyboard: [[{ text: "✅ Ha", callback_data: "confirm_update" }, { text: "❌ Yo'q", callback_data: "cancel_update" }]] }
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "🚀 Yangi botga o'tish", url: NEW_BOT_LINK }],
+                        [{ text: "🏠 Asosiy menyu", callback_data: "back_to_main" }]
+                    ]
+                }
             });
         }
         // YANGILANISH REJIMINI O'CHIRISH
@@ -1869,7 +1872,6 @@ bot.on("callback_query", async (query) => {
             reply_markup: { remove_keyboard: true }
         });
     }
-    // ======================== TARIX (HISTORY) - TOSHKENT VAQTI BILAN ========================
     else if (data === "user_history") {
         const diags = getUserDiagnostics(user.phone, 10);
         if (diags.length === 0) {
@@ -1939,8 +1941,20 @@ bot.on("callback_query", async (query) => {
         await bot.sendMessage(chatId, "ℹ️ *ISUZU DOCTOR BOT*\n\n🚗 Avtomobil diagnostikasi\n🎁 Har 5 diagnostikada 1 ta BEPUL\n📱 " + MAX_CARS_PER_USER + " tagacha avtomobil\n📞 Aloqa: " + ADMIN_PHONE + "\n📌 Versiya: " + BOT_VERSION, { parse_mode: "Markdown" });
         await sendMainMenu(chatId, false, deviceType);
     }
+    // ======================== YANGI BOTGA O'TISH (FOYDALANUVCHI UCHUN) ========================
+    else if (data === "user_new_bot") {
+        await bot.sendMessage(chatId, `🚀 *YANGI BOTGA O'TISH*\n\nYangi botda yanada qulayroq xizmatlar va funksiyalar mavjud!\n\n🔗 *Yangi bot linki:* ${NEW_BOT_LINK}\n\n👇 Pastdagi tugma orqali o'tishingiz mumkin:`, {
+            parse_mode: "Markdown",
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "🚀 Yangi botga o'tish", url: NEW_BOT_LINK }],
+                    [{ text: "🏠 Asosiy menyu", callback_data: "back_to_main" }]
+                ]
+            }
+        });
+    }
     
-    // Security callback'lari (qisqartirilgan, avvalgidek)
+    // Security callback'lari (qisqartirilgan)
     else if (data === "security_allowed_admins") {
         let msg = "👥 *RUXSAT BERILGAN ADMINLAR*\n━━━━━━━━━━━━━━━━━━\n\n";
         if (adminSettings.allowedEditors.length === 0) {
