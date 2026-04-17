@@ -121,6 +121,144 @@ function getUserPaymentKeyboard() {
     };
 }
 
+// OYLIK DAROMAD TAHLILI
+else if (data === "monthly_income_analysis") {
+    const monthsData = getAllMonthsIncome();
+    
+    if (monthsData.length === 0 || monthsData.every(m => m.diagnosticCount === 0)) {
+        await bot.sendMessage(chatId, "📭 *Hozircha daromad ma'lumotlari mavjud emas!*", { parse_mode: "Markdown" });
+        await sendMainMenu(chatId, true, deviceType);
+        return;
+    }
+    
+    let msg = "📈 *OYLIK DAROMAD TAHLILI*\n━━━━━━━━━━━━━━━━━━\n\n";
+    let totalAllIncome = 0;
+    let totalAllDiagnostics = 0;
+    
+    for (const month of monthsData) {
+        if (month.diagnosticCount > 0) {
+            const monthName = formatMonthName(month.year, month.month);
+            msg += `📅 *${monthName}*\n`;
+            msg += `💰 Daromad: ${month.totalIncome.toLocaleString()} so'm\n`;
+            msg += `🔧 Diagnostika: ${month.diagnosticCount} ta\n`;
+            msg += `📊 O'rtacha chek: ${Math.round(month.averageCheck).toLocaleString()} so'm\n`;
+            msg += "━━━━━━━━━━━━━━━━━━\n";
+            totalAllIncome += month.totalIncome;
+            totalAllDiagnostics += month.diagnosticCount;
+        }
+    }
+    
+    if (totalAllDiagnostics > 0) {
+        msg += `\n📊 *JAMI (12 oy)*\n`;
+        msg += `💰 Umumiy daromad: ${totalAllIncome.toLocaleString()} so'm\n`;
+        msg += `🔧 Jami diagnostika: ${totalAllDiagnostics} ta\n`;
+        msg += `📊 O'rtacha oylik: ${Math.round(totalAllIncome / 12).toLocaleString()} so'm\n`;
+    }
+    
+    const keyboard = {
+        inline_keyboard: [
+            [{ text: "📊 Batafsil statistika", callback_data: "detailed_monthly_stats" }],
+            [{ text: "🔙 Ortga", callback_data: "back_to_main" }]
+        ]
+    };
+    
+    await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: keyboard });
+}
+
+// YILLIK DAROMAD TAHLILI
+else if (data === "yearly_income_analysis") {
+    const years = getAvailableYears();
+    
+    if (years.length === 0) {
+        await bot.sendMessage(chatId, "📭 *Hozircha daromad ma'lumotlari mavjud emas!*", { parse_mode: "Markdown" });
+        await sendMainMenu(chatId, true, deviceType);
+        return;
+    }
+    
+    let msg = "📅 *YILLIK DAROMAD TAHLILI*\n━━━━━━━━━━━━━━━━━━\n\n";
+    
+    for (const year of years) {
+        const yearData = getYearlyIncome(year);
+        if (yearData.totalDiagnostics > 0) {
+            msg += `📌 *${year}-YIL*\n`;
+            msg += `💰 Umumiy daromad: ${yearData.totalIncome.toLocaleString()} so'm\n`;
+            msg += `🔧 Jami diagnostika: ${yearData.totalDiagnostics} ta\n`;
+            msg += `📊 O'rtacha oylik: ${Math.round(yearData.averageMonthlyIncome).toLocaleString()} so'm\n`;
+            msg += "━━━━━━━━━━━━━━━━━━\n";
+        }
+    }
+    
+    const keyboard = {
+        inline_keyboard: [
+            [{ text: "📊 Oy bo'yicha batafsil", callback_data: "monthly_income_analysis" }],
+            [{ text: "🔙 Ortga", callback_data: "back_to_main" }]
+        ]
+    };
+    
+    await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: keyboard });
+}
+
+// BATAFSIL OYLIK STATISTIKA
+else if (data === "detailed_monthly_stats") {
+    const monthsData = getAllMonthsIncome();
+    const currentYear = new Date().getFullYear();
+    
+    let msg = "📊 *BATAFSIL OYLIK STATISTIKA*\n━━━━━━━━━━━━━━━━━━\n\n";
+    let chart = "";
+    
+    for (const month of monthsData) {
+        if (month.diagnosticCount > 0) {
+            const monthName = formatMonthName(month.year, month.month);
+            const barLength = Math.min(30, Math.floor(month.totalIncome / 1000000));
+            const bar = "█".repeat(barLength) + "░".repeat(30 - barLength);
+            msg += `📅 *${monthName}*\n`;
+            msg += `💰 ${month.totalIncome.toLocaleString()} so'm\n`;
+            msg += `${bar}\n`;
+            msg += "━━━━━━━━━━━━━━━━━━\n";
+        }
+    }
+    
+    const keyboard = {
+        inline_keyboard: [
+            [{ text: "📈 Grafik ko'rinish", callback_data: "income_chart" }],
+            [{ text: "🔙 Ortga", callback_data: "monthly_income_analysis" }]
+        ]
+    };
+    
+    await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: keyboard });
+}
+
+// BUGUNGI DIAGNOSTIKALAR
+else if (data === "today_diagnostics") {
+    const diags = getTodayDiagnostics();
+    if (diags.length === 0) {
+        await bot.sendMessage(chatId, "📭 *Bugun diagnostika yo'q*", { parse_mode: "Markdown" });
+    } else {
+        let msg = "📅 *BUGUNGI DIAGNOSTIKALAR*\n━━━━━━━━━━━━━━━━━━\n\n";
+        let totalIncome = 0;
+        let freeCount = 0;
+        
+        diags.forEach(d => {
+            msg += `🚗 ${d.carNumber}\n`;
+            msg += `📝 ${d.workDescription.substring(0, 40)}${d.workDescription.length > 40 ? "..." : ""}\n`;
+            if (d.isFree) {
+                msg += `💰 BEPUL\n`;
+                freeCount++;
+            } else {
+                msg += `💰 ${d.price.toLocaleString()} so'm\n`;
+                totalIncome += d.price;
+            }
+            msg += "━━━━━━━━━━━━━━━━━━\n";
+        });
+        
+        msg += `\n📊 *JAMI:*\n`;
+        msg += `💰 Daromad: ${totalIncome.toLocaleString()} so'm\n`;
+        msg += `🔧 Diagnostika: ${diags.length} ta (${freeCount} ta bepul)\n`;
+        
+        await bot.sendMessage(chatId, msg, { parse_mode: "Markdown" });
+    }
+    await sendMainMenu(chatId, true, deviceType);
+}
 // -------------------- XAVFSIZLIK VA ADMIN --------------------
 const BOT_TOKEN = process.env.BOT_TOKEN || '8779251766:AAH12INusgBCawsk5awqIjcyHnNLiq5A33A';
 
