@@ -1,12 +1,25 @@
 {
   "name": "isuzu-doctor-bot",
-  "version": "1.0.0",
-  "description": "ISUZU DOCTOR Telegram Bot",
-  "main": "bot.js",
+  "version": "2.1.0",
+  "description": "ISUZU DOCTOR Telegram Bot - Avtomobil diagnostikasi va bonus tizimi",
+  "main": "index.js",
   "scripts": {
-    "start": "node bot.js"
+    "start": "node index.js"
   },
+  "keywords": [
+    "telegram",
+    "bot",
+    "isuzu",
+    "diagnostic",
+    "car",
+    "uzbekistan"
+  ],
+  "author": "Isuzu Doctor",
+  "license": "MIT",
   "dependencies": {
-    "node-telegram-bot-api": "^0.64.0"
+    "node-telegram-bot-api": "^0.61.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
   }
 }
