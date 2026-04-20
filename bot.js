@@ -1,6 +1,7 @@
 const TelegramBot = require('node-telegram-bot-api');
 const path = require('path');
 const fs = require('fs');
+const archiver = require('archiver');
 
 // -------------------- VERSIYA MA'LUMOTLARI --------------------
 const BOT_VERSION = "2.1.0";
@@ -38,135 +39,6 @@ function formatTashkentDateTime(date) {
     return `${formatTashkentDate(date)} ${formatTashkentTime(date)}`;
 }
 
-// -------------------- OYLIK DAROMAD TAHLILI FUNKSIYALARI --------------------
-function getMonthlyIncome(year, month) {
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0);
-    
-    const monthlyDiagnostics = diagnostics.filter(d => {
-        const diagDate = new Date(d.date);
-        return diagDate >= startDate && diagDate <= endDate && !d.isFree;
-    });
-    
-    const totalIncome = monthlyDiagnostics.reduce((sum, d) => sum + d.price, 0);
-    const diagnosticCount = monthlyDiagnostics.length;
-    const averageCheck = diagnosticCount > 0 ? totalIncome / diagnosticCount : 0;
-    
-    return {
-        year: year,
-        month: month,
-        totalIncome: totalIncome,
-        diagnosticCount: diagnosticCount,
-        averageCheck: averageCheck,
-        diagnostics: monthlyDiagnostics
-    };
-}
-
-function getAllMonthsIncome() {
-    const monthsData = [];
-    const currentDate = new Date();
-    const currentYear = currentDate.getFullYear();
-    const currentMonth = currentDate.getMonth() + 1;
-    
-    for (let i = 0; i < 12; i++) {
-        let year = currentYear;
-        let month = currentMonth - i;
-        if (month <= 0) {
-            month += 12;
-            year--;
-        }
-        if (year >= 2024) {
-            const monthData = getMonthlyIncome(year, month);
-            monthsData.push(monthData);
-        }
-    }
-    return monthsData;
-}
-
-function formatMonthName(year, month) {
-    const monthNames = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentyabr', 'Oktyabr', 'Noyabr', 'Dekabr'];
-    return `${monthNames[month - 1]} ${year}`;
-}
-
-function getYearlyIncome(year) {
-    let totalYearlyIncome = 0;
-    let totalDiagnostics = 0;
-    
-    for (let month = 1; month <= 12; month++) {
-        const monthData = getMonthlyIncome(year, month);
-        totalYearlyIncome += monthData.totalIncome;
-        totalDiagnostics += monthData.diagnosticCount;
-    }
-    
-    return {
-        year: year,
-        totalIncome: totalYearlyIncome,
-        totalDiagnostics: totalDiagnostics,
-        averageMonthlyIncome: totalYearlyIncome / 12
-    };
-}
-
-function getAvailableYears() {
-    const years = new Set();
-    diagnostics.forEach(d => {
-        if (!d.isFree) {
-            const year = new Date(d.date).getFullYear();
-            years.add(year);
-        }
-    });
-    return Array.from(years).sort((a, b) => b - a);
-}
-
-// -------------------- VERSIYA BOSHQARISH FUNKSIYALARI --------------------
-let versionHistory = [];
-
-function loadVersionHistory() {
-    try {
-        const historyFile = path.join(VOLUME_PATH, 'version_history.json');
-        if (fs.existsSync(historyFile)) {
-            versionHistory = JSON.parse(fs.readFileSync(historyFile, "utf8"));
-        } else {
-            versionHistory = [];
-            saveVersionHistory();
-        }
-        console.log("✅ Versiya tarixi yuklandi: " + versionHistory.length + " ta yozuv");
-    } catch (err) {
-        console.error("Versiya tarixini yuklashda xatolik:", err);
-        versionHistory = [];
-    }
-}
-
-function saveVersionHistory() {
-    const historyFile = path.join(VOLUME_PATH, 'version_history.json');
-    fs.writeFileSync(historyFile, JSON.stringify(versionHistory, null, 2));
-}
-
-function addVersionRecord(version, changes, adminId) {
-    const record = {
-        id: Date.now(),
-        version: version,
-        changes: changes,
-        adminId: adminId,
-        date: new Date().toISOString()
-    };
-    versionHistory.unshift(record);
-    if (versionHistory.length > 50) {
-        versionHistory = versionHistory.slice(0, 50);
-    }
-    saveVersionHistory();
-    addSecurityLog("VERSION_UPDATE", adminId, `Yangi versiya: ${version}`);
-    return record;
-}
-
-function getVersionInfo() {
-    return {
-        currentVersion: BOT_VERSION,
-        newBotLink: NEW_BOT_LINK,
-        lastVersion: versionHistory.length > 0 ? versionHistory[0].version : BOT_VERSION,
-        totalUpdates: versionHistory.length
-    };
-}
-
 // -------------------- TO'LOV MA'LUMOTLARI --------------------
 const CARD_NUMBER = "9860040115220143";
 const CARD_OWNER = "Erkinjon Shukurov";
@@ -187,17 +59,6 @@ function getCardInfoMessage() {
 
 ✅ To'lov amalga oshirilgandan so'ng, administrator bilan bog'lanishingiz mumkin.
     `;
-}
-
-function getUserPaymentKeyboard() {
-    return {
-        reply_markup: {
-            inline_keyboard: [
-                [{ text: "🏦 Karta raqamini ko'rish", callback_data: "show_card_number" }],
-                [{ text: "🔙 Ortga", callback_data: "back_to_main" }]
-            ]
-        }
-    };
 }
 
 // -------------------- XAVFSIZLIK VA ADMIN --------------------
@@ -374,6 +235,242 @@ function setUserDevice(userId, deviceType) {
     userDevices.set(userId, deviceType);
 }
 
+// -----------------=== BACKUP FUNKSIYALARI (QURILMAGA SAQLASH) ===-----------------
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
+    if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+}
+
+function createBackup() {
+    ensureVolumeDir();
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5);
+    const backupFolderName = `backup_${timestamp}`;
+    const backupFolderPath = path.join(BACKUP_DIR, backupFolderName);
+    
+    if (!fs.existsSync(backupFolderPath)) {
+        fs.mkdirSync(backupFolderPath, { recursive: true });
+    }
+    
+    // Barcha muhim fayllarni backup papkasiga nusxalash
+    const filesToBackup = [
+        { source: USERS_FILE, name: "users.json" },
+        { source: DIAGNOSTICS_FILE, name: "diagnostics.json" },
+        { source: ERRORS_FILE, name: "errors.json" },
+        { source: VIDEOS_FILE, name: "videos.json" },
+        { source: ADMIN_SETTINGS_FILE, name: "admin_settings.json" },
+        { source: VERSION_FILE, name: "version.json" }
+    ];
+    
+    for (const file of filesToBackup) {
+        if (fs.existsSync(file.source)) {
+            fs.copyFileSync(file.source, path.join(backupFolderPath, file.name));
+        }
+    }
+    
+    const historyFile = path.join(VOLUME_PATH, 'version_history.json');
+    if (fs.existsSync(historyFile)) {
+        fs.copyFileSync(historyFile, path.join(backupFolderPath, "version_history.json"));
+    }
+    
+    // Eski backup papkalarini tozalash (30 tadan ko'p bo'lsa)
+    const backups = fs.readdirSync(BACKUP_DIR)
+        .filter(f => {
+            const fullPath = path.join(BACKUP_DIR, f);
+            return fs.statSync(fullPath).isDirectory() && f.startsWith("backup_");
+        })
+        .sort();
+    
+    while (backups.length > 30) {
+        const oldest = backups.shift();
+        const oldestPath = path.join(BACKUP_DIR, oldest);
+        fs.rmSync(oldestPath, { recursive: true, force: true });
+        console.log(`🗑️ Eski backup o'chirildi: ${oldest}`);
+    }
+    
+    console.log("✅ Backup yaratildi: " + backupFolderName);
+    return backupFolderName;
+}
+
+function listBackups() {
+    ensureVolumeDir();
+    const backups = fs.readdirSync(BACKUP_DIR)
+        .filter(f => {
+            const fullPath = path.join(BACKUP_DIR, f);
+            return fs.statSync(fullPath).isDirectory() && f.startsWith("backup_");
+        })
+        .map(f => ({
+            name: f,
+            date: fs.statSync(path.join(BACKUP_DIR, f)).mtime
+        }))
+        .sort((a, b) => b.date - a.date);
+    return backups;
+}
+
+function getBackupSize(backupName) {
+    const backupPath = path.join(BACKUP_DIR, backupName);
+    if (!fs.existsSync(backupPath)) return 0;
+    
+    let totalSize = 0;
+    const files = fs.readdirSync(backupPath);
+    for (const file of files) {
+        const filePath = path.join(backupPath, file);
+        const stat = fs.statSync(filePath);
+        totalSize += stat.size;
+    }
+    return totalSize;
+}
+
+async function downloadBackupToDevice(chatId, backupName) {
+    const backupPath = path.join(BACKUP_DIR, backupName);
+    
+    if (!fs.existsSync(backupPath)) {
+        await bot.sendMessage(chatId, "❌ Backup topilmadi!");
+        return false;
+    }
+    
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5);
+    const zipFileName = `${backupName}.zip`;
+    const zipFilePath = path.join(BACKUP_DIR, zipFileName);
+    
+    return new Promise((resolve, reject) => {
+        const output = fs.createWriteStream(zipFilePath);
+        const archive = archiver('zip', { zlib: { level: 9 } });
+        
+        output.on('close', async () => {
+            const sizeInMB = (archive.pointer() / 1024 / 1024).toFixed(2);
+            console.log(`✅ ZIP yaratildi: ${zipFileName} (${sizeInMB} MB)`);
+            
+            try {
+                await bot.sendDocument(chatId, zipFilePath, {
+                    caption: `📦 *BACKUP ARXIVI*\n\n` +
+                            `📁 Nomi: ${backupName}\n` +
+                            `💾 Hajmi: ${sizeInMB} MB\n` +
+                            `📅 Yaratilgan: ${formatTashkentDateTime(new Date())}\n\n` +
+                            `📄 *Fayllar ro'yxati:*\n` +
+                            `• users.json - Foydalanuvchilar\n` +
+                            `• diagnostics.json - Diagnostikalar\n` +
+                            `• videos.json - Videolar\n` +
+                            `• errors.json - Xatoliklar\n` +
+                            `• admin_settings.json - Sozlamalar\n` +
+                            `• version.json - Versiya\n` +
+                            `• version_history.json - Yangilanishlar\n\n` +
+                            `✅ *Backup muvaffaqiyatli yuklab olindi!*\n` +
+                            `📁 Fayl qurilmangizga saqlandi.`,
+                    parse_mode: 'Markdown'
+                });
+                
+                setTimeout(() => {
+                    if (fs.existsSync(zipFilePath)) {
+                        fs.unlinkSync(zipFilePath);
+                        console.log(`🗑️ Vaqtinchalik fayl o'chirildi: ${zipFileName}`);
+                    }
+                }, 10 * 60 * 1000);
+                
+                resolve(true);
+            } catch (err) {
+                reject(err);
+            }
+        });
+        
+        archive.on('error', (err) => reject(err));
+        
+        archive.pipe(output);
+        archive.directory(backupPath, false);
+        archive.finalize();
+    });
+}
+
+async function showBackupDownloadMenu(chatId, page = 0) {
+    const backups = listBackups();
+    const itemsPerPage = 8;
+    const start = page * itemsPerPage;
+    const end = start + itemsPerPage;
+    const pageBackups = backups.slice(start, end);
+    const totalPages = Math.ceil(backups.length / itemsPerPage);
+    
+    if (backups.length === 0) {
+        await bot.sendMessage(chatId, "📭 *Hech qanday backup topilmadi!*\n\nAvval '💾 Backup olish' tugmasini bosing.", {
+            parse_mode: "Markdown"
+        });
+        return;
+    }
+    
+    let msg = "📥 *BACKUPNI QURILMAGA YUKLAB OLISH*\n━━━━━━━━━━━━━━━━━━\n\n";
+    msg += `📊 *Jami backup:* ${backups.length} ta\n`;
+    msg += `📄 *Sahifa:* ${page + 1}/${totalPages}\n`;
+    msg += "━━━━━━━━━━━━━━━━━━\n\n";
+    msg += "👇 *Yuklab olish uchun backupni tanlang:*\n\n";
+    
+    const keyboard = [];
+    
+    for (let i = 0; i < pageBackups.length; i++) {
+        const backup = pageBackups[i];
+        const num = start + i + 1;
+        const size = getBackupSize(backup.name);
+        const sizeStr = formatFileSize(size);
+        const dateStr = formatTashkentDateTime(backup.date);
+        
+        keyboard.push([{
+            text: `📥 ${num}. ${backup.name.substring(0, 20)} (${sizeStr})`,
+            callback_data: `download_backup_${backup.name}`
+        }]);
+    }
+    
+    const navButtons = [];
+    if (page > 0) {
+        navButtons.push({ text: "◀️ Oldingi", callback_data: `backup_page_${page - 1}` });
+    }
+    if (end < backups.length) {
+        navButtons.push({ text: "Keyingi ▶️", callback_data: `backup_page_${page + 1}` });
+    }
+    if (navButtons.length > 0) {
+        keyboard.push(navButtons);
+    }
+    
+    keyboard.push([{ text: "🔙 Admin panelga qaytish", callback_data: "back_to_main" }]);
+    
+    await bot.sendMessage(chatId, msg, {
+        parse_mode: "Markdown",
+        reply_markup: { inline_keyboard: keyboard }
+    });
+}
+
+function restoreBackup(backupName) {
+    const backupFolderPath = path.join(BACKUP_DIR, backupName);
+    if (!fs.existsSync(backupFolderPath)) return false;
+    
+    try {
+        const filesToRestore = [
+            { source: "users.json", target: USERS_FILE },
+            { source: "diagnostics.json", target: DIAGNOSTICS_FILE },
+            { source: "errors.json", target: ERRORS_FILE },
+            { source: "videos.json", target: VIDEOS_FILE },
+            { source: "admin_settings.json", target: ADMIN_SETTINGS_FILE },
+            { source: "version.json", target: VERSION_FILE }
+        ];
+        
+        for (const file of filesToRestore) {
+            const sourcePath = path.join(backupFolderPath, file.source);
+            if (fs.existsSync(sourcePath)) {
+                fs.copyFileSync(sourcePath, file.target);
+            }
+        }
+        
+        const historySource = path.join(backupFolderPath, "version_history.json");
+        if (fs.existsSync(historySource)) {
+            fs.copyFileSync(historySource, path.join(VOLUME_PATH, "version_history.json"));
+        }
+        
+        console.log("✅ Database tiklandi: " + backupName);
+        return true;
+    } catch (err) {
+        console.error("Tiklash xatosi:", err);
+        return false;
+    }
+}
+
 // -------------------- HISOBOT YARATISH --------------------
 async function generateDiagnosticsReport(diagnosticsList) {
     return new Promise((resolve, reject) => {
@@ -507,6 +604,7 @@ function revokeEditPermission(adminId, targetUserId) {
 // -------------------- VERSIYA BOSHQARISH --------------------
 let currentVersion = BOT_VERSION;
 let isUpdateMode = false;
+let versionHistory = [];
 
 function loadVersion() {
     try {
@@ -534,6 +632,44 @@ function saveVersion() {
     fs.writeFileSync(VERSION_FILE, JSON.stringify(versionData, null, 2));
 }
 
+function loadVersionHistory() {
+    try {
+        const historyFile = path.join(VOLUME_PATH, 'version_history.json');
+        if (fs.existsSync(historyFile)) {
+            versionHistory = JSON.parse(fs.readFileSync(historyFile, "utf8"));
+        } else {
+            versionHistory = [];
+            saveVersionHistory();
+        }
+        console.log("✅ Versiya tarixi yuklandi: " + versionHistory.length + " ta yozuv");
+    } catch (err) {
+        console.error("Versiya tarixini yuklashda xatolik:", err);
+        versionHistory = [];
+    }
+}
+
+function saveVersionHistory() {
+    const historyFile = path.join(VOLUME_PATH, 'version_history.json');
+    fs.writeFileSync(historyFile, JSON.stringify(versionHistory, null, 2));
+}
+
+function addVersionRecord(version, changes, adminId) {
+    const record = {
+        id: Date.now(),
+        version: version,
+        changes: changes,
+        adminId: adminId,
+        date: new Date().toISOString()
+    };
+    versionHistory.unshift(record);
+    if (versionHistory.length > 50) {
+        versionHistory = versionHistory.slice(0, 50);
+    }
+    saveVersionHistory();
+    addSecurityLog("VERSION_UPDATE", adminId, `Yangi versiya: ${version}`);
+    return record;
+}
+
 function updateBotVersion(newVersion, changes, adminId) {
     currentVersion = newVersion;
     saveVersion();
@@ -542,79 +678,13 @@ function updateBotVersion(newVersion, changes, adminId) {
     return true;
 }
 
-// -------------------- ESLATMA YUBORISH FUNKSIYASI --------------------
-async function sendReminder(chatId) {
-    try {
-        await bot.sendMessage(chatId, REMINDER_MESSAGE, { parse_mode: "Markdown" });
-    } catch (error) {
-        console.error("Eslatma yuborishda xatolik:", error);
-    }
-}
-
-// -------------------- BACKUP FUNKSIYALARI --------------------
-function createBackup() {
-    ensureVolumeDir();
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5);
-    
-    if (fs.existsSync(USERS_FILE)) {
-        fs.copyFileSync(USERS_FILE, path.join(BACKUP_DIR, "users_backup_" + timestamp + ".json"));
-    }
-    if (fs.existsSync(DIAGNOSTICS_FILE)) {
-        fs.copyFileSync(DIAGNOSTICS_FILE, path.join(BACKUP_DIR, "diagnostics_backup_" + timestamp + ".json"));
-    }
-    if (fs.existsSync(ERRORS_FILE)) {
-        fs.copyFileSync(ERRORS_FILE, path.join(BACKUP_DIR, "errors_backup_" + timestamp + ".json"));
-    }
-    if (fs.existsSync(VIDEOS_FILE)) {
-        fs.copyFileSync(VIDEOS_FILE, path.join(BACKUP_DIR, "videos_backup_" + timestamp + ".json"));
-    }
-    
-    const backups = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith(".json"));
-    while (backups.length > 30) {
-        const oldest = backups.sort()[0];
-        fs.unlinkSync(path.join(BACKUP_DIR, oldest));
-        backups.shift();
-    }
-    console.log("✅ Backup yaratildi: " + timestamp);
-    return true;
-}
-
-function listBackups() {
-    ensureVolumeDir();
-    const backups = fs.readdirSync(BACKUP_DIR)
-        .filter(f => f.startsWith("users_backup_") && f.endsWith(".json"))
-        .map(f => ({
-            name: f,
-            date: fs.statSync(path.join(BACKUP_DIR, f)).mtime
-        }))
-        .sort((a, b) => b.date - a.date);
-    return backups;
-}
-
-function restoreBackup(backupName) {
-    const backupPath = path.join(BACKUP_DIR, backupName);
-    if (!fs.existsSync(backupPath)) return false;
-    
-    const backupData = JSON.parse(fs.readFileSync(backupPath, "utf8"));
-    fs.writeFileSync(USERS_FILE, JSON.stringify(backupData, null, 2));
-    
-    const diagBackupName = backupName.replace("users_backup_", "diagnostics_backup_");
-    const diagBackupPath = path.join(BACKUP_DIR, diagBackupName);
-    if (fs.existsSync(diagBackupPath)) {
-        const diagData = JSON.parse(fs.readFileSync(diagBackupPath, "utf8"));
-        fs.writeFileSync(DIAGNOSTICS_FILE, JSON.stringify(diagData, null, 2));
-    }
-    
-    const videoBackupName = backupName.replace("users_backup_", "videos_backup_");
-    const videoBackupPath = path.join(BACKUP_DIR, videoBackupName);
-    if (fs.existsSync(videoBackupPath)) {
-        const videoData = JSON.parse(fs.readFileSync(videoBackupPath, "utf8"));
-        fs.writeFileSync(VIDEOS_FILE, JSON.stringify(videoData, null, 2));
-        videoList = videoData;
-    }
-    
-    console.log("✅ Database tiklandi: " + backupName);
-    return true;
+function getVersionInfo() {
+    return {
+        currentVersion: BOT_VERSION,
+        newBotLink: NEW_BOT_LINK,
+        lastVersion: versionHistory.length > 0 ? versionHistory[0].version : BOT_VERSION,
+        totalUpdates: versionHistory.length
+    };
 }
 
 // -------------------- DATABASE FUNKSIYALARI --------------------
@@ -913,6 +983,12 @@ function getStatistics() {
     const paidDiagnostics = diagnostics.filter(d => !d.isFree);
     const totalIncome = paidDiagnostics.reduce((sum, d) => sum + d.price, 0);
     
+    const backups = listBackups();
+    let totalBackupSize = 0;
+    for (const backup of backups.slice(0, 10)) {
+        totalBackupSize += getBackupSize(backup.name);
+    }
+    
     return {
         totalUsers: activeUsers.length,
         blockedUsers: blockedUsers.length,
@@ -926,7 +1002,9 @@ function getStatistics() {
         isUpdateMode: isUpdateMode,
         totalVideos: videoList.length,
         totalVideoViews: videoList.reduce((sum, v) => sum + (v.views || 0), 0),
-        versionHistoryCount: versionHistory.length
+        versionHistoryCount: versionHistory.length,
+        totalBackups: backups.length,
+        totalBackupSize: totalBackupSize
     };
 }
 
@@ -949,7 +1027,7 @@ function getAllUsersWithDetails() {
     }));
 }
 
-// ======================== VIDEO GALEREYA FUNKSIYALARI ========================
+// -------------------- VIDEO GALEREYA FUNKSIYALARI --------------------
 async function showVideoGallery(chatId, page = 0) {
     const activeVideos = getActiveVideos();
     const itemsPerPage = 5;
@@ -995,7 +1073,7 @@ async function showVideoGallery(chatId, page = 0) {
     });
 }
 
-// ======================== INLINE KEYBOARD (FOYDALANUVCHI UCHUN) ========================
+// -------------------- INLINE KEYBOARD (FOYDALANUVCHI UCHUN) --------------------
 function getCompactInlineKeyboard() {
     return {
         reply_markup: {
@@ -1020,12 +1098,11 @@ function getAdminReplyKeyboard() {
         ["⚠️ Xatoliklar", "📋 Diagnostika tarixi"],
         ["📅 Bugungi", "📄 Hisobot"],
         ["📹 Video galereya", "📤 Video yuklash"],
-        ["💾 Backup", "🔄 Tiklash"],
-        ["🚫 Foyd. boshqarish", "🔐 Xavfsizlik"],
-        ["📌 Versiya", "📢 Xabar yuborish"]
+        ["💾 Backup olish", "📥 Backup yuklab olish"],
+        ["🔄 Backupdan tiklash", "🚫 Foyd. boshqarish"],
+        ["🔐 Xavfsizlik", "📌 Versiya"],
+        ["📢 Xabar yuborish", "❌ Asosiy menyu"]
     ];
-    
-    keyboard.push(["❌ Asosiy menyu"]);
     
     return {
         reply_markup: {
@@ -1052,6 +1129,17 @@ function removeKeyboard() {
     return {
         reply_markup: {
             remove_keyboard: true
+        }
+    };
+}
+
+function getUserPaymentKeyboard() {
+    return {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: "🏦 Karta raqamini ko'rish", callback_data: "show_card_number" }],
+                [{ text: "🔙 Ortga", callback_data: "back_to_main" }]
+            ]
         }
     };
 }
@@ -1092,6 +1180,94 @@ function clearUserSession(userId) {
 // -------------------- FOYDALANUVCHILARNI BOSHQARISH (SAHIFALASH) --------------------
 let userManagePage = 0;
 const USERS_PER_PAGE = 10;
+
+// -------------------- ESLATMA YUBORISH FUNKSIYASI --------------------
+async function sendReminder(chatId) {
+    try {
+        await bot.sendMessage(chatId, REMINDER_MESSAGE, { parse_mode: "Markdown" });
+    } catch (error) {
+        console.error("Eslatma yuborishda xatolik:", error);
+    }
+}
+
+// -------------------- OYLIK DAROMAD TAHLILI FUNKSIYALARI --------------------
+function getMonthlyIncome(year, month) {
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0);
+    
+    const monthlyDiagnostics = diagnostics.filter(d => {
+        const diagDate = new Date(d.date);
+        return diagDate >= startDate && diagDate <= endDate && !d.isFree;
+    });
+    
+    const totalIncome = monthlyDiagnostics.reduce((sum, d) => sum + d.price, 0);
+    const diagnosticCount = monthlyDiagnostics.length;
+    const averageCheck = diagnosticCount > 0 ? totalIncome / diagnosticCount : 0;
+    
+    return {
+        year: year,
+        month: month,
+        totalIncome: totalIncome,
+        diagnosticCount: diagnosticCount,
+        averageCheck: averageCheck,
+        diagnostics: monthlyDiagnostics
+    };
+}
+
+function getAllMonthsIncome() {
+    const monthsData = [];
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    const currentMonth = currentDate.getMonth() + 1;
+    
+    for (let i = 0; i < 12; i++) {
+        let year = currentYear;
+        let month = currentMonth - i;
+        if (month <= 0) {
+            month += 12;
+            year--;
+        }
+        if (year >= 2024) {
+            const monthData = getMonthlyIncome(year, month);
+            monthsData.push(monthData);
+        }
+    }
+    return monthsData;
+}
+
+function formatMonthName(year, month) {
+    const monthNames = ['Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun', 'Iyul', 'Avgust', 'Sentyabr', 'Oktyabr', 'Noyabr', 'Dekabr'];
+    return `${monthNames[month - 1]} ${year}`;
+}
+
+function getYearlyIncome(year) {
+    let totalYearlyIncome = 0;
+    let totalDiagnostics = 0;
+    
+    for (let month = 1; month <= 12; month++) {
+        const monthData = getMonthlyIncome(year, month);
+        totalYearlyIncome += monthData.totalIncome;
+        totalDiagnostics += monthData.diagnosticCount;
+    }
+    
+    return {
+        year: year,
+        totalIncome: totalYearlyIncome,
+        totalDiagnostics: totalDiagnostics,
+        averageMonthlyIncome: totalYearlyIncome / 12
+    };
+}
+
+function getAvailableYears() {
+    const years = new Set();
+    diagnostics.forEach(d => {
+        if (!d.isFree) {
+            const year = new Date(d.date).getFullYear();
+            years.add(year);
+        }
+    });
+    return Array.from(years).sort((a, b) => b - a);
+}
 
 // -------------------- /start KOMANDASI --------------------
 bot.onText(/\/start/, async (msg) => {
@@ -1384,7 +1560,7 @@ bot.onText(/\/statistika/, async (msg) => {
     if (!isAdmin(userId)) return;
     
     const stats = getStatistics();
-    await bot.sendMessage(chatId, "📊 *STATISTIKA*\n\n👥 Faol foydalanuvchilar: " + stats.totalUsers + "\n🚫 Bloklanganlar: " + stats.blockedUsers + "\n🚗 Avtomobillar: " + stats.totalCars + "\n🔧 Jami: " + stats.totalDiagnostics + "\n💰 To'lovli: " + stats.paidDiagnostics + "\n🎉 Bepul: " + stats.freeDiagnostics + "\n💵 Daromad: " + stats.totalIncome.toLocaleString() + " so'm\n⚠️ Xatoliklar: " + stats.totalErrors + "\n📹 Videolar: " + stats.totalVideos + " ta\n👁️ Video ko'rishlar: " + stats.totalVideoViews + " ta\n📌 Joriy versiya: `" + stats.currentVersion + "`\n📊 Yangilanishlar soni: " + stats.versionHistoryCount + " ta\n🔄 Yangilanish rejimi: " + (stats.isUpdateMode ? "Faol" : "O'chirilgan"), { parse_mode: "Markdown" });
+    await bot.sendMessage(chatId, "📊 *STATISTIKA*\n\n👥 Faol foydalanuvchilar: " + stats.totalUsers + "\n🚫 Bloklanganlar: " + stats.blockedUsers + "\n🚗 Avtomobillar: " + stats.totalCars + "\n🔧 Jami: " + stats.totalDiagnostics + "\n💰 To'lovli: " + stats.paidDiagnostics + "\n🎉 Bepul: " + stats.freeDiagnostics + "\n💵 Daromad: " + stats.totalIncome.toLocaleString() + " so'm\n⚠️ Xatoliklar: " + stats.totalErrors + "\n📹 Videolar: " + stats.totalVideos + " ta\n👁️ Video ko'rishlar: " + stats.totalVideoViews + " ta\n📌 Joriy versiya: `" + stats.currentVersion + "`\n📊 Yangilanishlar soni: " + stats.versionHistoryCount + " ta\n🔄 Yangilanish rejimi: " + (stats.isUpdateMode ? "Faol" : "O'chirilgan") + "\n💾 Backuplar soni: " + stats.totalBackups + " ta\n💾 Backuplar hajmi: " + formatFileSize(stats.totalBackupSize), { parse_mode: "Markdown" });
 });
 
 bot.onText(/\/users/, async (msg) => {
@@ -1756,7 +1932,7 @@ bot.on("message", async (msg) => {
         // STATISTIKA
         if (text === "📊 Statistika") {
             const stats = getStatistics();
-            await bot.sendMessage(chatId, `📊 *STATISTIKA*\n\n👥 Faol: ${stats.totalUsers}\n🚫 Bloklangan: ${stats.blockedUsers}\n🚗 Avtomobillar: ${stats.totalCars}\n🔧 Jami: ${stats.totalDiagnostics}\n💰 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n📹 Videolar: ${stats.totalVideos} ta\n📌 Versiya: \`${stats.currentVersion}\`\n📊 Yangilanishlar: ${stats.versionHistoryCount} ta`, { parse_mode: "Markdown" });
+            await bot.sendMessage(chatId, `📊 *STATISTIKA*\n\n👥 Faol: ${stats.totalUsers}\n🚫 Bloklangan: ${stats.blockedUsers}\n🚗 Avtomobillar: ${stats.totalCars}\n🔧 Jami: ${stats.totalDiagnostics}\n💰 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n📹 Videolar: ${stats.totalVideos} ta\n📌 Versiya: \`${stats.currentVersion}\`\n📊 Yangilanishlar: ${stats.versionHistoryCount} ta\n💾 Backuplar: ${stats.totalBackups} ta\n💾 Backup hajmi: ${formatFileSize(stats.totalBackupSize)}`, { parse_mode: "Markdown" });
             await sendMainMenu(chatId, true, deviceType);
         }
         // FOYDALANUVCHILAR
@@ -1876,26 +2052,38 @@ bot.on("message", async (msg) => {
             await bot.sendMessage(chatId, "📤 *VIDEO YUKLASH*\n\nIltimos, video faylni yuboring:", { parse_mode: "Markdown" });
         }
         // BACKUP YARATISH
-        else if (text === "💾 Backup") {
+        else if (text === "💾 Backup olish") {
             await bot.sendMessage(chatId, "💾 *Backup yaratilmoqda...*", { parse_mode: "Markdown" });
-            createBackup();
-            await bot.sendMessage(chatId, "✅ *Backup yaratildi!*", { parse_mode: "Markdown" });
+            const backupName = createBackup();
+            await bot.sendMessage(chatId, `✅ *Backup yaratildi!*\n\n📁 Nomi: ${backupName}\n📅 Vaqt: ${formatTashkentDateTime(new Date())}\n\n📥 Yuklab olish uchun "📥 Backup yuklab olish" tugmasini bosing.`, { parse_mode: "Markdown" });
             await sendMainMenu(chatId, true, deviceType);
         }
-        // DATABASE TIKLASH
-        else if (text === "🔄 Tiklash") {
+        // BACKUP YUKLAB OLISH (QURILMAGA)
+        else if (text === "📥 Backup yuklab olish") {
+            await showBackupDownloadMenu(chatId, 0);
+        }
+        // BACKUPDAN TIKLASH
+        else if (text === "🔄 Backupdan tiklash") {
             const backups = listBackups();
             if (backups.length === 0) {
                 await bot.sendMessage(chatId, "❌ *Backup topilmadi!*", { parse_mode: "Markdown" });
                 await sendMainMenu(chatId, true, deviceType);
             } else {
-                let msg = "🔄 *DATABASE TIKLASH*\n\nBackup tanlang:\n\n";
-                const keyboard = backups.slice(0, 10).map(b => [{ text: "📁 " + b.name.substring(0, 30), callback_data: "restore_" + b.name }]);
+                let msg = "🔄 *DATABASE TIKLASH*\n━━━━━━━━━━━━━━━━━━\n\n";
+                msg += "⚠️ *DIQQAT!* Tiklash joriy ma'lumotlarni o'zgartiradi!\n\n";
+                msg += "📋 Backuplar ro'yxati:\n\n";
+                
+                const keyboard = [];
+                backups.slice(0, 15).forEach((backup, i) => {
+                    const dateStr = formatTashkentDateTime(backup.date);
+                    keyboard.push([{ text: `📁 ${i+1}. ${backup.name} (${dateStr})`, callback_data: `restore_backup_${backup.name}` }]);
+                });
                 keyboard.push([{ text: "❌ Bekor qilish", callback_data: "restore_cancel" }]);
+                
                 await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: { inline_keyboard: keyboard } });
             }
         }
-        // FOYDALANUVCHILARNI BOSHQARISH (FAQAT AVTOMOBIL RAQAMI BILAN)
+        // FOYDALANUVCHILARNI BOSHQARISH
         else if (text === "🚫 Foyd. boshqarish") {
             const activeUsers = getActiveUsers();
             const blockedUsers = getBlockedUsers();
@@ -2465,6 +2653,40 @@ bot.on("callback_query", async (query) => {
         await sendMainMenu(chatId, true, deviceType);
     }
     
+    // BACKUP YUKLAB OLISH CALLBACK'LARI
+    else if (data.startsWith("backup_page_")) {
+        const page = parseInt(data.split("_")[2]);
+        await showBackupDownloadMenu(chatId, page);
+    }
+    else if (data.startsWith("download_backup_")) {
+        const backupName = data.replace("download_backup_", "");
+        await bot.sendMessage(chatId, "📥 *Backup tayyorlanmoqda...*\n\nIltimos kuting...", { parse_mode: "Markdown" });
+        
+        try {
+            await downloadBackupToDevice(chatId, backupName);
+        } catch (err) {
+            await bot.sendMessage(chatId, `❌ *Xatolik:* ${err.message}`, { parse_mode: "Markdown" });
+        }
+    }
+    else if (data.startsWith("restore_backup_")) {
+        const backupName = data.replace("restore_backup_", "");
+        await bot.sendMessage(chatId, "🔄 *Database tiklanmoqda...*", { parse_mode: "Markdown" });
+        
+        if (restoreBackup(backupName)) {
+            loadData();
+            loadVideos();
+            loadVersionHistory();
+            await bot.sendMessage(chatId, "✅ *Database tiklandi!*", { parse_mode: "Markdown" });
+        } else {
+            await bot.sendMessage(chatId, "❌ *Xatolik!*", { parse_mode: "Markdown" });
+        }
+        await sendMainMenu(chatId, true, deviceType);
+    }
+    else if (data === "restore_cancel") {
+        await bot.sendMessage(chatId, "❌ *Bekor qilindi.*", { parse_mode: "Markdown" });
+        await sendMainMenu(chatId, true, deviceType);
+    }
+    
     // Security callback'lari
     else if (data === "security_allowed_admins") {
         let msg = "👥 *RUXSAT BERILGAN ADMINLAR*\n━━━━━━━━━━━━━━━━━━\n\n";
@@ -2533,23 +2755,6 @@ bot.on("callback_query", async (query) => {
         const targetAdminId = parseInt(data.split("_")[2]);
         const result = revokeEditPermission(userId, targetAdminId);
         await bot.sendMessage(chatId, result.message, { parse_mode: "Markdown" });
-        await sendMainMenu(chatId, true, deviceType);
-    }
-    else if (data.startsWith("restore_")) {
-        const backupName = data.replace("restore_", "");
-        await bot.sendMessage(chatId, "🔄 *Database tiklanmoqda...*", { parse_mode: "Markdown" });
-        if (restoreBackup(backupName)) {
-            loadData();
-            loadVideos();
-            loadVersionHistory();
-            await bot.sendMessage(chatId, "✅ *Database tiklandi!*", { parse_mode: "Markdown" });
-        } else {
-            await bot.sendMessage(chatId, "❌ *Xatolik!*", { parse_mode: "Markdown" });
-        }
-        await sendMainMenu(chatId, true, deviceType);
-    }
-    else if (data === "restore_cancel") {
-        await bot.sendMessage(chatId, "❌ *Bekor qilindi.*", { parse_mode: "Markdown" });
         await sendMainMenu(chatId, true, deviceType);
     }
     else if (data === "user_manage_cancel") {
@@ -2693,5 +2898,6 @@ console.log("📹 Videolar: " + videoList.length + " ta");
 console.log("💳 Karta: " + CARD_NUMBER);
 console.log("📊 Yangilanishlar soni: " + versionHistory.length);
 console.log("💾 Volume manzili: " + VOLUME_PATH);
+console.log("💾 Backuplar soni: " + listBackups().length);
 console.log("=".repeat(60));
 console.log("✅ Bot ishlashga tayyor!");
