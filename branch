@@ -1,0 +1,4 @@
+git checkout -b fix-pagination
+git add bot.js
+git commit -m "Add pagination for users list"
+git push origin fix-pagination
