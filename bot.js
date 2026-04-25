@@ -995,6 +995,80 @@ async function showVideoGallery(chatId, page = 0) {
     });
 }
 
+// ======================== FOYDALANUVCHILARNI SAHIFALANGAN KO'RSATISH ========================
+let usersListPage = 0;
+const USERS_PER_PAGE = 10;
+
+async function showUsersList(chatId, page, messageId = null) {
+    const usersList = getAllUsersWithDetails();
+    
+    if (usersList.length === 0) {
+        const msg = "📭 Hech qanday foydalanuvchi yo'q";
+        if (messageId) {
+            await bot.editMessageText(msg, {
+                chat_id: chatId,
+                message_id: messageId,
+                parse_mode: "Markdown"
+            });
+        } else {
+            await bot.sendMessage(chatId, msg, { parse_mode: "Markdown" });
+        }
+        return;
+    }
+    
+    const totalPages = Math.ceil(usersList.length / USERS_PER_PAGE);
+    const start = page * USERS_PER_PAGE;
+    const end = start + USERS_PER_PAGE;
+    const pageUsers = usersList.slice(start, end);
+    
+    let msg = "👥 *FOYDALANUVCHILAR*\n";
+    msg += `📄 Sahifa ${page + 1}/${totalPages}\n`;
+    msg += `👤 Jami: ${usersList.length} ta foydalanuvchi\n`;
+    msg += "━━━━━━━━━━━━━━━━━━\n\n";
+    
+    for (let i = 0; i < pageUsers.length; i++) {
+        const u = pageUsers[i];
+        const num = start + i + 1;
+        const status = u.isBlocked ? "🔴" : "🟢";
+        msg += `${status} *${num}. ${(u.fullName || "Ismsiz").substring(0, 20)}*\n`;
+        msg += `📞 ${u.phone}\n`;
+        const carsStr = u.cars.map(c => c.carNumber).join(", ");
+        msg += `🚗 ${carsStr.substring(0, 35)}${carsStr.length > 35 ? "..." : ""}\n`;
+        msg += `📊 ${u.totalDiagnostics} ta diagnostika\n`;
+        msg += "━━━━━━━━━━━━━━━━━━\n";
+    }
+    
+    const navButtons = [];
+    if (page > 0) {
+        navButtons.push({ text: "◀️ Oldingi", callback_data: `users_page_prev` });
+    }
+    if (end < usersList.length) {
+        navButtons.push({ text: "Keyingi ▶️", callback_data: `users_page_next` });
+    }
+    
+    const keyboard = [];
+    if (navButtons.length > 0) {
+        keyboard.push(navButtons);
+    }
+    keyboard.push([{ text: "🔙 Ortga", callback_data: "back_to_main" }]);
+    
+    const replyMarkup = { inline_keyboard: keyboard };
+    
+    if (messageId) {
+        await bot.editMessageText(msg, {
+            chat_id: chatId,
+            message_id: messageId,
+            parse_mode: "Markdown",
+            reply_markup: replyMarkup
+        });
+    } else {
+        await bot.sendMessage(chatId, msg, {
+            parse_mode: "Markdown",
+            reply_markup: replyMarkup
+        });
+    }
+}
+
 // ======================== INLINE KEYBOARD (FOYDALANUVCHI UCHUN) ========================
 function getCompactInlineKeyboard() {
     return {
@@ -1091,7 +1165,6 @@ function clearUserSession(userId) {
 
 // -------------------- FOYDALANUVCHILARNI BOSHQARISH (SAHIFALASH) --------------------
 let userManagePage = 0;
-const USERS_PER_PAGE = 10;
 
 // -------------------- /start KOMANDASI --------------------
 bot.onText(/\/start/, async (msg) => {
@@ -1392,22 +1465,8 @@ bot.onText(/\/users/, async (msg) => {
     const userId = msg.from.id;
     if (!isAdmin(userId)) return;
     
-    const usersList = getAllUsersWithDetails();
-    if (usersList.length === 0) { 
-        await bot.sendMessage(chatId, "📭 Hech qanday foydalanuvchi yo'q"); 
-        return; 
-    }
-    
-    let msgText = "👥 *FOYDALANUVCHILAR*\n━━━━━━━━━━━━━━━━━━\n\n";
-    usersList.slice(0, 15).forEach((u, index) => { 
-        const status = u.isBlocked ? "🔴" : "🟢";
-        msgText += status + " *" + (index + 1) + ". " + (u.fullName || "Ism kiritilmagan") + "*\n";
-        msgText += "📞 " + u.phone + "\n";
-        msgText += "🚗 " + u.cars.map(c => c.carNumber).join(", ") + "\n";
-        msgText += "📊 " + u.totalDiagnostics + " ta diagnostika\n";
-        msgText += "━━━━━━━━━━━━━━━━━━\n";
-    });
-    await bot.sendMessage(chatId, msgText, { parse_mode: "Markdown" });
+    usersListPage = 0;
+    await showUsersList(chatId, usersListPage);
 });
 
 bot.onText(/\/add_diagnostic/, async (msg) => {
@@ -1759,26 +1818,10 @@ bot.on("message", async (msg) => {
             await bot.sendMessage(chatId, `📊 *STATISTIKA*\n\n👥 Faol: ${stats.totalUsers}\n🚫 Bloklangan: ${stats.blockedUsers}\n🚗 Avtomobillar: ${stats.totalCars}\n🔧 Jami: ${stats.totalDiagnostics}\n💰 Daromad: ${stats.totalIncome.toLocaleString()} so'm\n📹 Videolar: ${stats.totalVideos} ta\n📌 Versiya: \`${stats.currentVersion}\`\n📊 Yangilanishlar: ${stats.versionHistoryCount} ta`, { parse_mode: "Markdown" });
             await sendMainMenu(chatId, true, deviceType);
         }
-        // FOYDALANUVCHILAR
+        // FOYDALANUVCHILAR (sahifalangan)
         else if (text === "👥 Foydalanuvchilar") {
-            const usersList = getAllUsersWithDetails();
-            if (usersList.length === 0) { 
-                await bot.sendMessage(chatId, "📭 Hech qanday foydalanuvchi yo'q", { parse_mode: "Markdown" }); 
-                await sendMainMenu(chatId, true, deviceType);
-                return; 
-            }
-            
-            let msgText = "👥 *FOYDALANUVCHILAR*\n━━━━━━━━━━━━━━━━━━\n\n";
-            usersList.slice(0, 15).forEach((u, index) => { 
-                const status = u.isBlocked ? "🔴" : "🟢";
-                msgText += `${status} *${index + 1}. ${(u.fullName || "Ismsiz").substring(0, 20)}*\n`;
-                msgText += `📞 ${u.phone}\n`;
-                const carsStr = u.cars.map(c => c.carNumber).join(", ");
-                msgText += `🚗 ${carsStr.substring(0, 30)}${carsStr.length > 30 ? "..." : ""}\n`;
-                msgText += "━━━━━━━━━━━━━━━━━━\n";
-            });
-            await bot.sendMessage(chatId, msgText, { parse_mode: "Markdown" });
-            await sendMainMenu(chatId, true, deviceType);
+            usersListPage = 0;
+            await showUsersList(chatId, usersListPage);
         }
         // DIAGNOSTIKA QO'SHISH
         else if (text === "🔧 Diagnostika") {
@@ -2003,6 +2046,7 @@ bot.on("message", async (msg) => {
         else if (text === "❌ Asosiy menyu") {
             clearUserSession(userId);
             userManagePage = 0;
+            usersListPage = 0;
             await sendMainMenu(chatId, true, deviceType);
         }
         else if (!session.step) {
@@ -2337,6 +2381,22 @@ bot.on("callback_query", async (query) => {
         await bot.sendMessage(chatId, msg, { parse_mode: "Markdown", reply_markup: keyboard });
     }
     
+    // FOYDALANUVCHILAR RO'YXATI SAHIFALASH
+    else if (data === "users_page_prev") {
+        if (usersListPage > 0) {
+            usersListPage--;
+            await showUsersList(chatId, usersListPage, messageId);
+        }
+    }
+    else if (data === "users_page_next") {
+        const usersList = getAllUsersWithDetails();
+        const totalPages = Math.ceil(usersList.length / USERS_PER_PAGE);
+        if (usersListPage + 1 < totalPages) {
+            usersListPage++;
+            await showUsersList(chatId, usersListPage, messageId);
+        }
+    }
+    
     // FOYDALANUVCHILARNI BOSHQARISH NAVIGATSIYASI
     else if (data === "user_page_prev") {
         if (userManagePage > 0) {
@@ -2663,6 +2723,7 @@ bot.on("callback_query", async (query) => {
     }
     else if (data === "back_to_main") {
         userManagePage = 0;
+        usersListPage = 0;
         await sendMainMenu(chatId, isAdmin(userId), deviceType);
     }
 });
