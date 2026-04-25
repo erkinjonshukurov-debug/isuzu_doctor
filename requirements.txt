@@ -1,3 +1,8 @@
-node-telegram-bot-api@0.64.0
-dotenv@16.4.5
-python-telegram-bot==13.7
+# Faylni o'chirish
+git rm requirements.txt
+
+# Commit qilish
+git commit -m "Remove requirements.txt - project uses Node.js not Python"
+
+# Push qilish
+git push origin main
